@@ -28,7 +28,7 @@ class ZoomCastApp {
         this.playhead = 0;
         this.isPlaying = false;
         this.playInterval = null;
-        this.cursorStyle = 'macos-white';
+        this.cursorStyle = 'style1';
 
         this._init();
     }
@@ -39,6 +39,9 @@ class ZoomCastApp {
         this._bindEditorControls();
         this._bindExportControls();
         this._bindAppearanceControls();
+
+        // Preload cursor images
+        await ZoomEngine.preloadCursors();
 
         // Listen for global shortcuts from main
         window.zoomcast.onToggleRecording(() => this._toggleRecording());
