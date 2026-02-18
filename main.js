@@ -119,7 +119,7 @@ ipcMain.handle('start-tracking', (event, displayBounds) => {
   recordingStartTime = Date.now();
   isRecording = true;
 
-  // Poll cursor position at 120Hz for smooth tracking
+  // Poll cursor position at 30Hz (enough for smooth replay, doesn't starve recorder)
   cursorInterval = setInterval(() => {
     if (!isRecording) return;
     const point = screen.getCursorScreenPoint();
@@ -128,7 +128,7 @@ ipcMain.handle('start-tracking', (event, displayBounds) => {
     const nx = (point.x - (displayBounds?.x || 0)) / (displayBounds?.width || 1920);
     const ny = (point.y - (displayBounds?.y || 0)) / (displayBounds?.height || 1080);
     cursorData.push({ t, x: nx, y: ny, rx: point.x, ry: point.y });
-  }, 8); // ~120fps tracking
+  }, 33); // ~30fps tracking
 
   // Start Python click tracker
   startClickTracker(displayBounds);
@@ -176,7 +176,7 @@ ipcMain.handle('get-temp-dir', () => {
 // Export video with FFmpeg
 ipcMain.handle('export-video', async (event, options) => {
   const { inputPath, outputPath, framesDir } = options;
-  
+
   try {
     let ffmpegPath;
     try {
@@ -292,7 +292,7 @@ ipcMain.handle('cleanup-temp', async (event, dirPath) => {
 function startClickTracker(displayBounds) {
   // Use a Python subprocess for reliable global mouse click detection
   const pythonScript = path.join(__dirname, 'helpers', 'cursor_tracker.py');
-  
+
   if (!fs.existsSync(pythonScript)) {
     console.warn('cursor_tracker.py not found, click detection disabled');
     return;

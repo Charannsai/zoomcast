@@ -119,15 +119,14 @@ class ZoomCastApp {
         if (!this.selectedSource) return;
 
         try {
-            // Get media stream
+            // Get media stream — no min/maxFrameRate constraints
+            // (restrictive FPS constraints freeze the capture pipeline on many GPUs)
             this.mediaStream = await navigator.mediaDevices.getUserMedia({
                 audio: false,
                 video: {
                     mandatory: {
                         chromeMediaSource: 'desktop',
                         chromeMediaSourceId: this.selectedSource.id,
-                        minFrameRate: parseInt(document.getElementById('fps-select').value),
-                        maxFrameRate: parseInt(document.getElementById('fps-select').value),
                     }
                 }
             });
@@ -144,8 +143,10 @@ class ZoomCastApp {
             this.recordedChunks = [];
             this.clickData = [];
 
+            // Use VP8 — VP9 real-time encoding is far too CPU-heavy and causes
+            // frame freezes / dropped frames during recording
             this.mediaRecorder = new MediaRecorder(this.mediaStream, {
-                mimeType: 'video/webm;codecs=vp9',
+                mimeType: 'video/webm;codecs=vp8',
                 videoBitsPerSecond: bitrate,
             });
 
@@ -156,7 +157,7 @@ class ZoomCastApp {
             this.mediaRecorder.onstop = () => this._onRecordingComplete();
 
             // Start
-            this.mediaRecorder.start(100); // collect every 100ms
+            this.mediaRecorder.start(1000); // collect every 1s (less overhead than 100ms)
             this.isRecording = true;
             this.isPaused = false;
             this.recStartTime = Date.now();
