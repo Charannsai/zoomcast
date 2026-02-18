@@ -171,7 +171,7 @@ class Timeline {
         ctx.clearRect(0, 0, W, H);
 
         // Background
-        ctx.fillStyle = '#141425';
+        ctx.fillStyle = '#1e222b';
         ctx.fillRect(0, 0, W, H);
 
         // Thumbnail strip
@@ -183,18 +183,18 @@ class Timeline {
                 x += thumb.w;
             }
             // Dim overlay
-            ctx.fillStyle = 'rgba(10, 10, 20, 0.45)';
+            ctx.fillStyle = 'rgba(14, 16, 21, 0.45)';
             ctx.fillRect(0, 0, W, this.THUMB_H);
         }
 
         // Separator line
-        ctx.fillStyle = '#1e1e3a';
+        ctx.fillStyle = '#2a303c';
         ctx.fillRect(0, this.THUMB_H, W, 1);
 
         // Time labels
         const numLabels = Math.min(20, Math.floor(W / 60));
         ctx.font = '10px Inter, sans-serif';
-        ctx.fillStyle = '#606080';
+        ctx.fillStyle = '#606a78';
         for (let i = 0; i <= numLabels; i++) {
             const t = (this.duration * i) / numLabels;
             const x = this._tToX(t);

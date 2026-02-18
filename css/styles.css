@@ -373,7 +373,7 @@ html, body {
   box-shadow: 0 4px 20px var(--red-glow);
 }
 .record-btn:hover:not(:disabled) {
-  background: #dc2626;
+  background: #e04545;
   transform: translateY(-1px);
   box-shadow: 0 6px 28px var(--red-glow);
 }
@@ -421,8 +421,8 @@ html, body {
   align-items: center;
   gap: 10px;
   padding: 10px 24px;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(240, 96, 96, 0.1);
+  border: 1px solid rgba(240, 96, 96, 0.3);
   border-radius: 100px;
 }
 
