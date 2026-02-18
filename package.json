@@ -1,0 +1,52 @@
+{
+  "name": "zoomcast",
+  "version": "1.0.0",
+  "description": "ZoomCast — Screen.studio for Windows. Professional screen recorder with cinematic zoom effects.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win",
+    "pack": "electron-builder --dir"
+  },
+  "author": "ZoomCast",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "fluent-ffmpeg": "^2.1.3",
+    "ffmpeg-static": "^5.2.0"
+  },
+  "build": {
+    "appId": "com.zoomcast.app",
+    "productName": "ZoomCast",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": ["nsis"],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "css/**/*",
+      "js/**/*",
+      "assets/**/*",
+      "helpers/**/*",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/ffmpeg-static/ffmpeg.exe",
+        "to": "ffmpeg.exe"
+      }
+    ]
+  }
+}
