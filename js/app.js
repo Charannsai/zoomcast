@@ -727,11 +727,11 @@ class ZoomCastApp {
             corners: parseInt(document.getElementById('corners-slider')?.value || 16),
             shadow: document.getElementById('shadow-toggle')?.checked ?? true,
             shadowIntensity: parseInt(document.getElementById('shadow-slider')?.value || 60),
-            bgColor: document.getElementById('bg-color')?.value || '#13161c',
-            bgColor2: document.getElementById('bg-color2')?.value || '#1e222b',
+            bgColor: document.getElementById('bg-color')?.value || '#1a1a1a',
+            bgColor2: document.getElementById('bg-color2')?.value || '#111111',
             bgType: document.getElementById('bg-type')?.value || 'gradient',
             cursorSize: parseFloat(document.getElementById('cursor-size-slider')?.value || 1.2),
-            cursorStyle: this.cursorStyle || 'macos-white',
+            cursorStyle: this.cursorStyle || 'style1',
             clickEffects: document.getElementById('click-effects-toggle')?.checked ?? true,
         };
     }
