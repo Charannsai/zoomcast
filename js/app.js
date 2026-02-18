@@ -322,53 +322,51 @@ class ZoomCastApp {
             this.timeline.playhead = this.playhead;
             this.timeline.draw();
         }
-        await this._updatePreview();
+        const video = document.getElementById('hidden-video');
+        if (!video.src) return;
+        video.currentTime = this.playhead;
+        await new Promise(resolve => {
+            const done = () => { video.removeEventListener('seeked', done); resolve(); };
+            video.addEventListener('seeked', done);
+            setTimeout(done, 500); // fallback
+        });
+        this._drawPreviewFrame(video);
         this._updateTimeDisplay();
     }
 
-    async _updatePreview() {
-        const video = document.getElementById('hidden-video');
+    _drawPreviewFrame(video) {
         const canvas = this.previewCanvas;
-        if (!canvas || !video.src) return;
+        if (!canvas || !video || video.readyState < 2) return;
 
-        // Seek video
-        video.currentTime = this.playhead;
-        await new Promise(r => { video.onseeked = r; setTimeout(r, 150); });
-
-        // Size canvas to fit wrapper
         const wrapper = canvas.parentElement;
         const ww = wrapper.clientWidth;
         const wh = wrapper.clientHeight;
         if (ww < 10 || wh < 10) return;
 
-        // Determine output size (16:9)
-        const aspect = video.videoWidth / video.videoHeight;
+        const aspect = (video.videoWidth || 1920) / (video.videoHeight || 1080);
         let cw, ch;
-        if (ww / wh > aspect) {
-            ch = wh;
-            cw = Math.round(ch * aspect);
-        } else {
-            cw = ww;
-            ch = Math.round(cw / aspect);
-        }
+        if (ww / wh > aspect) { ch = wh; cw = Math.round(ch * aspect); }
+        else { cw = ww; ch = Math.round(cw / aspect); }
 
         const dpr = window.devicePixelRatio || 1;
-        canvas.width = cw * dpr;
-        canvas.height = ch * dpr;
-        canvas.style.width = cw + 'px';
-        canvas.style.height = ch + 'px';
+        if (canvas.width !== cw * dpr || canvas.height !== ch * dpr) {
+            canvas.width = cw * dpr;
+            canvas.height = ch * dpr;
+            canvas.style.width = cw + 'px';
+            canvas.style.height = ch + 'px';
+        }
         this.previewCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-        // Render frame with all effects
         const config = this._getConfig();
         config.outWidth = cw;
         config.outHeight = ch;
+        // Cursor overlay is OFF by default (system cursor is already in the recording)
         config.cursorData = document.getElementById('cursor-toggle')?.checked ? this.cursorData : null;
         config.clickData = document.getElementById('click-effects-toggle')?.checked ? this.clickData : null;
 
-        const zoom = ZoomEngine.renderFrame(this.previewCtx, video, this.playhead, this.segments, config);
+        const currentTime = video.currentTime;
+        const zoom = ZoomEngine.renderFrame(this.previewCtx, video, currentTime, this.segments, config);
 
-        // Update zoom display
         document.getElementById('zoom-info').textContent = `${zoom.factor.toFixed(1)}×`;
         document.getElementById('current-zoom').textContent = `Zoom: ${zoom.factor.toFixed(2)}×`;
     }
@@ -396,27 +394,30 @@ class ZoomCastApp {
         const btn = document.getElementById('btn-play');
         btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
 
-        const fps = parseInt(document.getElementById('fps-select').value) || 30;
-        const step = 1 / fps;
+        const video = document.getElementById('hidden-video');
+        video.currentTime = this.playhead;
+        video.play();
 
-        this.playInterval = setInterval(() => {
-            this.playhead += step;
+        const drawLoop = () => {
+            if (!this.isPlaying) return;
+            this.playhead = video.currentTime;
             if (this.playhead >= this.duration) {
-                this.playhead = 0;
                 this._stopPlayback();
                 return;
             }
             this.timeline.playhead = this.playhead;
             this.timeline.draw();
-            this._updatePreview();
+            this._drawPreviewFrame(video);
             this._updateTimeDisplay();
-        }, 1000 / fps);
+            requestAnimationFrame(drawLoop);
+        };
+        requestAnimationFrame(drawLoop);
     }
 
     _stopPlayback() {
         this.isPlaying = false;
-        if (this.playInterval) clearInterval(this.playInterval);
-        this.playInterval = null;
+        const video = document.getElementById('hidden-video');
+        video.pause();
         const btn = document.getElementById('btn-play');
         btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
     }
@@ -584,45 +585,71 @@ class ZoomCastApp {
         btn.disabled = true;
         btn.textContent = 'Rendering...';
 
+        const fill = document.getElementById('progress-fill');
+        const text = document.getElementById('progress-text');
+        const pct = document.getElementById('progress-percent');
         document.getElementById('export-progress-section').classList.remove('hidden');
 
         try {
-            // Save the raw webm first
-            const buffer = await this.videoBlob.arrayBuffer();
-            const tmpVideoPath = await window.zoomcast.saveTempVideo(buffer);
-
-            // For now, do a simple export (re-encode webm to mp4)
-            // Full frame-by-frame rendering with effects would be done here
+            // Ask for save location first
             let outputPath = document.getElementById('export-path').value;
-            if (!outputPath.includes('/') && !outputPath.includes('\\')) {
-                // Just filename, prepend desktop
-                const result = await window.zoomcast.showSaveDialog({ defaultPath: outputPath });
-                if (result.canceled) { btn.disabled = false; btn.textContent = 'Render & Export'; return; }
-                outputPath = result.filePath;
+            const result = await window.zoomcast.showSaveDialog({ defaultPath: outputPath });
+            if (result.canceled) {
+                btn.disabled = false;
+                btn.textContent = 'Render & Export';
+                return;
             }
+            outputPath = result.filePath;
 
-            // Simple FFmpeg re-encode
-            const fill = document.getElementById('progress-fill');
-            const text = document.getElementById('progress-text');
-            const pct = document.getElementById('progress-percent');
+            fill.style.width = '20%';
+            text.textContent = 'Saving recording...';
+            pct.textContent = '20%';
 
-            fill.style.width = '10%';
-            text.textContent = 'Encoding video...';
-            pct.textContent = '10%';
+            // Save blob directly to disk
+            const buffer = await this.videoBlob.arrayBuffer();
 
-            const result = await window.zoomcast.simpleExport({
-                inputPath: tmpVideoPath,
-                outputPath: outputPath,
-            });
+            // If user chose .webm, save directly (always works)
+            if (outputPath.endsWith('.webm')) {
+                fill.style.width = '60%';
+                text.textContent = 'Writing file...';
+                pct.textContent = '60%';
+                await window.zoomcast.writeFile({ filePath: outputPath, data: buffer });
+                fill.style.width = '100%';
+                pct.textContent = '100%';
+                text.textContent = 'Complete!';
+            } else {
+                // Try FFmpeg conversion to MP4
+                fill.style.width = '30%';
+                text.textContent = 'Saving temp file...';
+                pct.textContent = '30%';
+                const tmpVideoPath = await window.zoomcast.saveTempVideo(buffer);
 
-            fill.style.width = '100%';
-            pct.textContent = '100%';
-            text.textContent = 'Complete!';
+                fill.style.width = '40%';
+                text.textContent = 'Converting to MP4...';
+                pct.textContent = '40%';
+
+                try {
+                    const exportResult = await window.zoomcast.simpleExport({
+                        inputPath: tmpVideoPath,
+                        outputPath: outputPath,
+                    });
+                    fill.style.width = '100%';
+                    pct.textContent = '100%';
+                    text.textContent = 'Complete!';
+                } catch (ffmpegErr) {
+                    // FFmpeg failed — save as WebM instead
+                    const webmPath = outputPath.replace(/\.mp4$/i, '.webm');
+                    await window.zoomcast.writeFile({ filePath: webmPath, data: buffer });
+                    outputPath = webmPath;
+                    fill.style.width = '100%';
+                    pct.textContent = '100%';
+                    text.textContent = 'Saved as WebM (FFmpeg not available for MP4)';
+                }
+            }
 
             // Show completion
             document.getElementById('export-complete').classList.remove('hidden');
             document.getElementById('export-complete-path').textContent = outputPath;
-
             document.getElementById('btn-open-folder').onclick = () => window.zoomcast.showInFolder(outputPath);
             document.getElementById('btn-new-recording').onclick = () => {
                 this._showScreen('home');
@@ -630,7 +657,9 @@ class ZoomCastApp {
             };
 
         } catch (err) {
-            alert('Export failed: ' + err.message);
+            fill.style.width = '0%';
+            text.textContent = 'Export failed: ' + err.message;
+            pct.textContent = '';
         }
 
         btn.disabled = false;
