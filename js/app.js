@@ -536,8 +536,8 @@ class ZoomCastApp {
             corners: parseInt(document.getElementById('corners-slider')?.value || 16),
             shadow: document.getElementById('shadow-toggle')?.checked ?? true,
             shadowIntensity: parseInt(document.getElementById('shadow-slider')?.value || 60),
-            bgColor: document.getElementById('bg-color')?.value || '#0f0f1a',
-            bgColor2: document.getElementById('bg-color2')?.value || '#1a0a2e',
+            bgColor: document.getElementById('bg-color')?.value || '#13161c',
+            bgColor2: document.getElementById('bg-color2')?.value || '#1e222b',
             bgType: document.getElementById('bg-type')?.value || 'gradient',
             cursorSize: parseFloat(document.getElementById('cursor-size-slider')?.value || 1.2),
             clickEffects: document.getElementById('click-effects-toggle')?.checked ?? true,
@@ -591,7 +591,7 @@ class ZoomCastApp {
         document.getElementById('export-progress-section').classList.remove('hidden');
 
         try {
-            // Ask for save location first
+            // Ask for save location
             let outputPath = document.getElementById('export-path').value;
             const result = await window.zoomcast.showSaveDialog({ defaultPath: outputPath });
             if (result.canceled) {
@@ -601,51 +601,130 @@ class ZoomCastApp {
             }
             outputPath = result.filePath;
 
-            fill.style.width = '20%';
-            text.textContent = 'Saving recording...';
-            pct.textContent = '20%';
+            fill.style.width = '5%';
+            text.textContent = 'Preparing renderer...';
+            pct.textContent = '5%';
 
-            // Save blob directly to disk
-            const buffer = await this.videoBlob.arrayBuffer();
+            // ── Phase 1: Render video with all effects using canvas MediaRecorder ──
+            const video = document.getElementById('hidden-video');
+            const vw = video.videoWidth || 1920;
+            const vh = video.videoHeight || 1080;
 
-            // If user chose .webm, save directly (always works)
+            // Export canvas at original video resolution for full clarity
+            const exportCanvas = document.createElement('canvas');
+            exportCanvas.width = vw;
+            exportCanvas.height = vh;
+            const exportCtx = exportCanvas.getContext('2d');
+
+            // Build config for rendering at full resolution
+            const config = this._getConfig();
+            config.outWidth = vw;
+            config.outHeight = vh;
+            config.cursorData = this.cursorData;
+            config.clickData = this.clickData;
+
+            // Setup canvas MediaRecorder
+            const stream = exportCanvas.captureStream(0); // manual frame push
+            const recorderMime = MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
+                ? 'video/webm;codecs=vp8' : 'video/webm';
+            const mediaRec = new MediaRecorder(stream, {
+                mimeType: recorderMime,
+                videoBitsPerSecond: 15000000, // 15 Mbps for high quality
+            });
+
+            const chunks = [];
+            mediaRec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+
+            const renderedBlob = await new Promise((resolve, reject) => {
+                mediaRec.onstop = () => {
+                    resolve(new Blob(chunks, { type: 'video/webm' }));
+                };
+                mediaRec.onerror = (e) => reject(e.error || new Error('MediaRecorder error'));
+                mediaRec.start(500);
+
+                const videoTrack = stream.getVideoTracks()[0];
+                const fps = 30;
+                const totalFrames = Math.ceil(this.duration * fps);
+                let frameIdx = 0;
+                const startTs = Date.now();
+
+                const renderNextFrame = async () => {
+                    if (frameIdx >= totalFrames) {
+                        video.pause();
+                        // Small delay to flush last frames
+                        setTimeout(() => mediaRec.stop(), 200);
+                        return;
+                    }
+
+                    const t = frameIdx / fps;
+                    video.currentTime = t;
+
+                    await new Promise(r => {
+                        const done = () => { video.removeEventListener('seeked', done); r(); };
+                        video.addEventListener('seeked', done);
+                        setTimeout(done, 300);
+                    });
+
+                    // Render frame with all effects
+                    ZoomEngine.renderFrame(exportCtx, video, t, this.segments, config);
+
+                    // Push frame to recorder
+                    if (videoTrack.requestFrame) videoTrack.requestFrame();
+
+                    frameIdx++;
+
+                    // Update progress with ETA
+                    const percent = Math.round((frameIdx / totalFrames) * 90) + 5;
+                    const elapsed = (Date.now() - startTs) / 1000;
+                    const rate = frameIdx / elapsed;
+                    const remaining = Math.max(0, (totalFrames - frameIdx) / rate);
+                    const etaMin = Math.floor(remaining / 60);
+                    const etaSec = Math.ceil(remaining % 60);
+                    const etaStr = etaMin > 0 ? `${etaMin}m ${etaSec}s` : `${etaSec}s`;
+
+                    fill.style.width = percent + '%';
+                    pct.textContent = percent + '%';
+                    text.textContent = `Rendering frame ${frameIdx}/${totalFrames} · ${rate.toFixed(1)} fps · ETA ${etaStr}`;
+
+                    // Small delay so UI can update
+                    await new Promise(r => setTimeout(r, 5));
+                    renderNextFrame();
+                };
+
+                renderNextFrame();
+            });
+
+            // ── Phase 2: Save or convert ──
+            fill.style.width = '95%';
+            pct.textContent = '95%';
+
+            const renderedBuffer = await renderedBlob.arrayBuffer();
+
             if (outputPath.endsWith('.webm')) {
-                fill.style.width = '60%';
-                text.textContent = 'Writing file...';
-                pct.textContent = '60%';
-                await window.zoomcast.writeFile({ filePath: outputPath, data: buffer });
-                fill.style.width = '100%';
-                pct.textContent = '100%';
-                text.textContent = 'Complete!';
+                text.textContent = 'Writing WebM...';
+                await window.zoomcast.writeFile({ filePath: outputPath, data: renderedBuffer });
             } else {
-                // Try FFmpeg conversion to MP4
-                fill.style.width = '30%';
-                text.textContent = 'Saving temp file...';
-                pct.textContent = '30%';
-                const tmpVideoPath = await window.zoomcast.saveTempVideo(buffer);
-
-                fill.style.width = '40%';
+                // Save temp WebM, convert to MP4
                 text.textContent = 'Converting to MP4...';
-                pct.textContent = '40%';
+                const tmpPath = await window.zoomcast.saveTempVideo(renderedBuffer);
 
                 try {
-                    const exportResult = await window.zoomcast.simpleExport({
-                        inputPath: tmpVideoPath,
+                    await window.zoomcast.simpleExport({
+                        inputPath: tmpPath,
                         outputPath: outputPath,
                     });
-                    fill.style.width = '100%';
-                    pct.textContent = '100%';
-                    text.textContent = 'Complete!';
                 } catch (ffmpegErr) {
-                    // FFmpeg failed — save as WebM instead
-                    const webmPath = outputPath.replace(/\.mp4$/i, '.webm');
-                    await window.zoomcast.writeFile({ filePath: webmPath, data: buffer });
+                    // FFmpeg failed — save as WebM
+                    const webmPath = outputPath.replace(/\\.mp4$/i, '.webm');
+                    await window.zoomcast.writeFile({ filePath: webmPath, data: renderedBuffer });
                     outputPath = webmPath;
-                    fill.style.width = '100%';
-                    pct.textContent = '100%';
-                    text.textContent = 'Saved as WebM (FFmpeg not available for MP4)';
+                    text.textContent = 'Saved as WebM (FFmpeg unavailable)';
                 }
             }
+
+            fill.style.width = '100%';
+            pct.textContent = '100%';
+            text.textContent = 'Complete!';
 
             // Show completion
             document.getElementById('export-complete').classList.remove('hidden');

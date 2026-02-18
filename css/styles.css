@@ -1150,7 +1150,7 @@ html, body {
   width: 0%;
   background: linear-gradient(90deg, var(--blue), var(--purple));
   border-radius: 3px;
-  transition: width 0.3s var(--ease);
+  transition: width 0.1s var(--ease);
 }
 
 .progress-info {
@@ -1216,8 +1216,9 @@ html, body {
 select {
   -webkit-appearance: none;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%23606080' stroke-width='1.5' fill='none' /%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%23606a78' stroke-width='1.5' fill='none' /%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
   padding-right: 28px;
 }
+
