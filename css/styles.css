@@ -468,6 +468,7 @@ html, body {
   outline: none;
   transition: border-color var(--fast);
   -webkit-appearance: none;
+  appearance: none;
 }
 .setting-select:focus, .setting-input:focus { border-color: var(--accent); }
 .setting-select option { background: var(--bg-3); }
@@ -676,6 +677,7 @@ html, body {
 .prop-range {
   flex: 1;
   -webkit-appearance: none;
+  appearance: none;
   height: 3px;
   background: var(--bg-5);
   border-radius: 2px;
