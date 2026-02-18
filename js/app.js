@@ -28,6 +28,7 @@ class ZoomCastApp {
         this.playhead = 0;
         this.isPlaying = false;
         this.playInterval = null;
+        this.cursorStyle = 'macos-white';
 
         this._init();
     }
@@ -506,7 +507,10 @@ class ZoomCastApp {
 
     // ─── Appearance Controls ─────────────────────────────────────
     _bindAppearanceControls() {
-        const update = () => this._updatePreview();
+        const update = () => {
+            const video = document.getElementById('hidden-video');
+            if (video && video.src) this._drawPreviewFrame(video);
+        };
         const controls = ['bg-color', 'bg-color2', 'bg-type', 'shadow-toggle', 'cursor-toggle', 'click-effects-toggle'];
         controls.forEach(id => {
             const el = document.getElementById(id);
@@ -525,8 +529,46 @@ class ZoomCastApp {
             slider.oninput = () => {
                 const suffix = sliderId.includes('cursor') ? '×' : sliderId.includes('shadow') ? '%' : 'px';
                 document.getElementById(valId).textContent = slider.value + suffix;
-                this._updatePreview();
+                update();
             };
+        }
+
+        // Populate cursor style grid
+        this._initCursorStyleGrid();
+    }
+
+    _initCursorStyleGrid() {
+        const grid = document.getElementById('cursor-style-grid');
+        if (!grid) return;
+        grid.innerHTML = '';
+
+        for (const [key, info] of Object.entries(ZoomEngine.CURSOR_STYLES)) {
+            const card = document.createElement('div');
+            card.className = 'cursor-style-card' + (key === this.cursorStyle ? ' selected' : '');
+            card.dataset.style = key;
+
+            const canvas = document.createElement('canvas');
+            canvas.width = 120;
+            canvas.height = 36;
+            ZoomEngine.drawCursorPreview(canvas, key);
+
+            const label = document.createElement('span');
+            label.className = 'cursor-style-label';
+            label.textContent = info.label;
+
+            card.appendChild(canvas);
+            card.appendChild(label);
+
+            card.addEventListener('click', () => {
+                this.cursorStyle = key;
+                grid.querySelectorAll('.cursor-style-card').forEach(c => c.classList.remove('selected'));
+                card.classList.add('selected');
+                // Refresh preview
+                const video = document.getElementById('hidden-video');
+                if (video && video.src) this._drawPreviewFrame(video);
+            });
+
+            grid.appendChild(card);
         }
     }
 
@@ -540,6 +582,7 @@ class ZoomCastApp {
             bgColor2: document.getElementById('bg-color2')?.value || '#1e222b',
             bgType: document.getElementById('bg-type')?.value || 'gradient',
             cursorSize: parseFloat(document.getElementById('cursor-size-slider')?.value || 1.2),
+            cursorStyle: this.cursorStyle || 'macos-white',
             clickEffects: document.getElementById('click-effects-toggle')?.checked ?? true,
         };
     }
