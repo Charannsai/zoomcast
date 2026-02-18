@@ -817,11 +817,13 @@ class ZoomCastApp {
 
             // Setup canvas MediaRecorder
             const stream = exportCanvas.captureStream(0); // manual frame push
-            const recorderMime = MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
-                ? 'video/webm;codecs=vp8' : 'video/webm';
+            const recorderMime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+                ? 'video/webm;codecs=vp9'
+                : MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
+                    ? 'video/webm;codecs=vp8' : 'video/webm';
             const mediaRec = new MediaRecorder(stream, {
                 mimeType: recorderMime,
-                videoBitsPerSecond: 15000000, // 15 Mbps for high quality
+                videoBitsPerSecond: 50000000, // 50 Mbps for max quality
             });
 
             const chunks = [];
@@ -904,6 +906,8 @@ class ZoomCastApp {
                     await window.zoomcast.simpleExport({
                         inputPath: tmpPath,
                         outputPath: outputPath,
+                        preset: 'ultrafast',
+                        crf: '22',
                     });
                 } catch (ffmpegErr) {
                     // FFmpeg failed — save as WebM

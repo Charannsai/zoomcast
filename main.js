@@ -242,8 +242,8 @@ ipcMain.handle('simple-export', async (event, options) => {
         '-i', inputPath,
         '-c:v', 'libx264',
         '-pix_fmt', 'yuv420p',
-        '-preset', 'medium',
-        '-crf', '18',
+        '-preset', options.preset || 'ultrafast', // Default to fast for speed
+        '-crf', options.crf || '18',
         '-movflags', '+faststart',
         outputPath,
       ];
