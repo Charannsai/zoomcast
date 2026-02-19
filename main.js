@@ -119,16 +119,30 @@ ipcMain.handle('start-tracking', (event, displayBounds) => {
   recordingStartTime = Date.now();
   isRecording = true;
 
-  // Poll cursor position at 30Hz (enough for smooth replay, doesn't starve recorder)
+  const bx = displayBounds?.x || 0;
+  const by = displayBounds?.y || 0;
+  const bw = displayBounds?.width || 1920;
+  const bh = displayBounds?.height || 1080;
+
+  // Poll cursor position at 60Hz for smooth, accurate tracking
   cursorInterval = setInterval(() => {
     if (!isRecording) return;
     const point = screen.getCursorScreenPoint();
     const t = (Date.now() - recordingStartTime) / 1000;
-    // Normalize to display bounds
-    const nx = (point.x - (displayBounds?.x || 0)) / (displayBounds?.width || 1920);
-    const ny = (point.y - (displayBounds?.y || 0)) / (displayBounds?.height || 1080);
-    cursorData.push({ t, x: nx, y: ny, rx: point.x, ry: point.y });
-  }, 33); // ~30fps tracking
+
+    // Normalize to [0, 1] within the recording display
+    const nx = (point.x - bx) / bw;
+    const ny = (point.y - by) / bh;
+
+    // Skip if cursor is outside of this display (can happen on multi-monitor setups)
+    if (nx < -0.05 || nx > 1.05 || ny < -0.05 || ny > 1.05) return;
+
+    // Clamp to [0, 1]
+    const cx = Math.max(0, Math.min(1, nx));
+    const cy = Math.max(0, Math.min(1, ny));
+
+    cursorData.push({ t, x: cx, y: cy, rx: point.x, ry: point.y });
+  }, 16); // ~60fps tracking for accurate cursor path
 
   // Start Python click tracker
   startClickTracker(displayBounds);
