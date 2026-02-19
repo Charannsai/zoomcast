@@ -35,6 +35,11 @@ contextBridge.exposeInMainWorld('zoomcast', {
     simpleExport: (options) => ipcRenderer.invoke('simple-export', options),
     getFFmpegPath: () => ipcRenderer.invoke('get-ffmpeg-path'),
 
+    // Raw-frame streaming pipeline (Canvas → FFmpeg stdin, no PNG files)
+    startFFmpegStream: (options) => ipcRenderer.invoke('start-ffmpeg-stream', options),
+    writeFrame: (data) => ipcRenderer.invoke('write-frame', data),
+    endFFmpegStream: () => ipcRenderer.invoke('end-ffmpeg-stream'),
+
     // Events from main
     onToggleRecording: (cb) => ipcRenderer.on('toggle-recording', cb),
     onStopRecording: (cb) => ipcRenderer.on('stop-recording', cb),

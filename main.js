@@ -173,55 +173,126 @@ ipcMain.handle('get-temp-dir', () => {
   return tmpDir;
 });
 
-// Export video with FFmpeg
-ipcMain.handle('export-video', async (event, options) => {
-  const { inputPath, outputPath, framesDir } = options;
+// ─── Raw-frame streaming export ────────────────────────────────────────────
+// Holds the active FFmpeg process during a streaming export session
+let ffmpegStreamProc = null;
+let ffmpegStreamResolve = null;
+let ffmpegStreamReject = null;
 
-  try {
-    let ffmpegPath;
+/**
+ * Start FFmpeg in stdin-pipe mode.
+ * options: { outputPath, width, height, fps }
+ */
+ipcMain.handle('start-ffmpeg-stream', async (event, options) => {
+  const { outputPath, width, height, fps = 30 } = options;
+
+  let ffmpegPath;
+  try { ffmpegPath = require('ffmpeg-static'); }
+  catch { ffmpegPath = 'ffmpeg'; }
+
+  const args = [
+    '-y',
+    '-f', 'rawvideo',
+    '-pix_fmt', 'rgba',
+    '-s', `${width}x${height}`,
+    '-r', String(fps),
+    '-i', '-',           // read from stdin
+    '-c:v', 'libx264',
+    '-preset', 'veryfast',
+    '-crf', '18',
+    '-pix_fmt', 'yuv420p',
+    '-movflags', '+faststart',
+    outputPath,
+  ];
+
+  return new Promise((resolve, reject) => {
     try {
-      ffmpegPath = require('ffmpeg-static');
-    } catch {
-      ffmpegPath = 'ffmpeg'; // fallback to system ffmpeg
+      ffmpegStreamProc = spawn(ffmpegPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    } catch (err) {
+      return reject({ ok: false, error: err.message });
     }
 
-    return new Promise((resolve, reject) => {
-      const args = [
-        '-y',
-        '-framerate', String(options.fps || 30),
-        '-i', path.join(framesDir, 'frame_%06d.png'),
-        '-c:v', 'libx264',
-        '-pix_fmt', 'yuv420p',
-        '-preset', 'medium',
-        '-crf', '18',
-        '-movflags', '+faststart',
-        outputPath,
-      ];
-
-      const proc = spawn(ffmpegPath, args);
-      let stderr = '';
-
-      proc.stderr.on('data', (data) => {
-        stderr += data.toString();
-        // Parse progress
-        const match = stderr.match(/frame=\s*(\d+)/);
-        if (match) {
-          mainWindow?.webContents.send('export-progress', {
-            frame: parseInt(match[1]),
-          });
-        }
-      });
-
-      proc.on('close', (code) => {
-        if (code === 0) resolve({ ok: true, path: outputPath });
-        else reject(new Error(`FFmpeg exited with code ${code}: ${stderr}`));
-      });
-
-      proc.on('error', (err) => reject(err));
+    let stderr = '';
+    ffmpegStreamProc.stderr.on('data', (data) => {
+      stderr += data.toString();
+      // Forward frame progress to renderer
+      const match = stderr.match(/frame=\s*(\d+)/);
+      if (match) {
+        mainWindow?.webContents.send('export-progress', { frame: parseInt(match[1]) });
+      }
     });
+
+    // Store promise hooks so end-ffmpeg-stream can await completion
+    ffmpegStreamResolve = resolve;
+    ffmpegStreamReject = reject;
+
+    ffmpegStreamProc.on('error', (err) => {
+      ffmpegStreamProc = null;
+      reject({ ok: false, error: err.message });
+    });
+
+    // We signal "started" immediately; the renderer begins piping frames.
+    // The real resolve/reject will fire when stdin is closed (end-ffmpeg-stream).
+    // But we need to return something now, so resolve with { ok: true, started: true }.
+    // Overwrite ffmpegStreamResolve so end-ffmpeg-stream resolves the caller of
+    // start-ffmpeg-stream is NOT the right pattern — instead let's just resolve now
+    // and have end-ffmpeg-stream return its own promise.
+    ffmpegStreamResolve = null;
+    ffmpegStreamReject = null;
+    resolve({ ok: true });
+  });
+});
+
+/**
+ * Write a raw RGBA frame buffer to FFmpeg stdin.
+ * data: ArrayBuffer (Uint8Array) of raw RGBA pixels
+ */
+ipcMain.handle('write-frame', async (event, data) => {
+  if (!ffmpegStreamProc || !ffmpegStreamProc.stdin.writable) {
+    return { ok: false, error: 'No active FFmpeg stream' };
+  }
+  try {
+    const buf = Buffer.from(data);
+    const canWrite = ffmpegStreamProc.stdin.write(buf);
+    // Backpressure: wait for drain if the buffer is full
+    if (!canWrite) {
+      await new Promise(resolve => ffmpegStreamProc.stdin.once('drain', resolve));
+    }
+    return { ok: true };
   } catch (err) {
     return { ok: false, error: err.message };
   }
+});
+
+/**
+ * Close FFmpeg stdin and wait for the process to finish encoding.
+ */
+ipcMain.handle('end-ffmpeg-stream', async () => {
+  if (!ffmpegStreamProc) return { ok: false, error: 'No active FFmpeg stream' };
+
+  return new Promise((resolve) => {
+    let stderr = '';
+    // Collect any remaining stderr (already streamed above, just for error reporting)
+    ffmpegStreamProc.stderr.on('data', (d) => { stderr += d.toString(); });
+
+    ffmpegStreamProc.on('close', (code) => {
+      ffmpegStreamProc = null;
+      if (code === 0) resolve({ ok: true });
+      else resolve({ ok: false, error: `FFmpeg exited with code ${code}\n${stderr.slice(-800)}` });
+    });
+
+    try {
+      ffmpegStreamProc.stdin.end();
+    } catch (err) {
+      ffmpegStreamProc = null;
+      resolve({ ok: false, error: err.message });
+    }
+  });
+});
+
+// Legacy export-video (kept for reference / fallback, not used in new pipeline)
+ipcMain.handle('export-video', async (event, options) => {
+  return { ok: false, error: 'export-video is deprecated; use start-ffmpeg-stream / write-frame / end-ffmpeg-stream' };
 });
 
 // Export directly from webm to mp4 (simple re-encode)
@@ -267,13 +338,9 @@ ipcMain.handle('simple-export', async (event, options) => {
   }
 });
 
-// Save processed frame
-ipcMain.handle('save-frame', async (event, { dir, index, dataUrl }) => {
-  const buffer = Buffer.from(dataUrl.replace(/^data:image\/png;base64,/, ''), 'base64');
-  const framePath = path.join(dir, `frame_${String(index).padStart(6, '0')}.png`);
-  fs.writeFileSync(framePath, buffer);
-  return framePath;
-});
+// save-frame is no longer used (raw streaming pipeline replaced PNG frames)
+// Kept as a no-op stub so any old callers don't crash.
+ipcMain.handle('save-frame', async () => ({ ok: false, error: 'save-frame is deprecated' }));
 
 // Clean up temp files
 ipcMain.handle('cleanup-temp', async (event, dirPath) => {

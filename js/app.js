@@ -793,20 +793,21 @@ class ZoomCastApp {
             }
             outputPath = result.filePath;
 
-            fill.style.width = '5%';
-            text.textContent = 'Preparing renderer...';
-            pct.textContent = '5%';
+            fill.style.width = '3%';
+            text.textContent = 'Starting FFmpeg...';
+            pct.textContent = '3%';
 
-            // ── Phase 1: Render video with all effects using canvas MediaRecorder ──
             const video = document.getElementById('hidden-video');
+            const fps = 30;
             const vw = video.videoWidth || 1920;
             const vh = video.videoHeight || 1080;
+            const totalFrames = Math.ceil(this.duration * fps);
 
-            // Export canvas at original video resolution for full clarity
+            // ── Off-screen canvas for rendering (no display, no DPR scaling) ──
             const exportCanvas = document.createElement('canvas');
             exportCanvas.width = vw;
             exportCanvas.height = vh;
-            const exportCtx = exportCanvas.getContext('2d');
+            const exportCtx = exportCanvas.getContext('2d', { willReadFrequently: true });
 
             // Build config for rendering at full resolution
             const config = this._getConfig();
@@ -815,114 +816,79 @@ class ZoomCastApp {
             config.cursorData = this.cursorData;
             config.clickData = this.clickData;
 
-            // Setup canvas MediaRecorder
-            const stream = exportCanvas.captureStream(0); // manual frame push
-            const recorderMime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-                ? 'video/webm;codecs=vp9'
-                : MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
-                    ? 'video/webm;codecs=vp8' : 'video/webm';
-            const mediaRec = new MediaRecorder(stream, {
-                mimeType: recorderMime,
-                videoBitsPerSecond: 50000000, // 50 Mbps for max quality
+            // ── Spawn FFmpeg reading raw RGBA frames from stdin ──
+            const streamStart = await window.zoomcast.startFFmpegStream({
+                outputPath,
+                width: vw,
+                height: vh,
+                fps,
             });
 
-            const chunks = [];
-            mediaRec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+            if (!streamStart.ok) {
+                throw new Error('Failed to start FFmpeg: ' + (streamStart.error || 'unknown error'));
+            }
 
-            const renderedBlob = await new Promise((resolve, reject) => {
-                mediaRec.onstop = () => {
-                    resolve(new Blob(chunks, { type: 'video/webm' }));
-                };
-                mediaRec.onerror = (e) => reject(e.error || new Error('MediaRecorder error'));
-                mediaRec.start(500);
+            fill.style.width = '5%';
+            pct.textContent = '5%';
 
-                const videoTrack = stream.getVideoTracks()[0];
-                const fps = 30;
-                const totalFrames = Math.ceil(this.duration * fps);
-                let frameIdx = 0;
-                const startTs = Date.now();
+            const startTs = Date.now();
 
-                const renderNextFrame = async () => {
-                    if (frameIdx >= totalFrames) {
-                        video.pause();
-                        // Small delay to flush last frames
-                        setTimeout(() => mediaRec.stop(), 200);
-                        return;
-                    }
+            for (let frameIdx = 0; frameIdx < totalFrames; frameIdx++) {
+                const t = frameIdx / fps;
 
-                    const t = frameIdx / fps;
-                    video.currentTime = t;
+                // Seek video to the exact timestamp
+                video.currentTime = t;
+                await new Promise(r => {
+                    const done = () => { video.removeEventListener('seeked', done); r(); };
+                    video.addEventListener('seeked', done);
+                    setTimeout(done, 200); // fallback so we never hang
+                });
 
-                    await new Promise(r => {
-                        const done = () => { video.removeEventListener('seeked', done); r(); };
-                        video.addEventListener('seeked', done);
-                        setTimeout(done, 300);
-                    });
+                // Draw the processed frame (zoom effects, overlays, background, cursor, etc.)
+                ZoomEngine.renderFrame(exportCtx, video, t, this.segments, config);
 
-                    // Render frame with all effects
-                    ZoomEngine.renderFrame(exportCtx, video, t, this.segments, config);
+                // Read raw RGBA pixels — no PNG encoding, no base64, no disk touch
+                const imageData = exportCtx.getImageData(0, 0, vw, vh);
 
-                    // Push frame to recorder
-                    if (videoTrack.requestFrame) videoTrack.requestFrame();
-
-                    frameIdx++;
-
-                    // Update progress with ETA
-                    const percent = Math.round((frameIdx / totalFrames) * 90) + 5;
-                    const elapsed = (Date.now() - startTs) / 1000;
-                    const rate = frameIdx / elapsed;
-                    const remaining = Math.max(0, (totalFrames - frameIdx) / rate);
-                    const etaMin = Math.floor(remaining / 60);
-                    const etaSec = Math.ceil(remaining % 60);
-                    const etaStr = etaMin > 0 ? `${etaMin}m ${etaSec}s` : `${etaSec}s`;
-
-                    fill.style.width = percent + '%';
-                    pct.textContent = percent + '%';
-                    text.textContent = `Rendering frame ${frameIdx}/${totalFrames} · ${rate.toFixed(1)} fps · ETA ${etaStr}`;
-
-                    // Small delay so UI can update
-                    await new Promise(r => setTimeout(r, 5));
-                    renderNextFrame();
-                };
-
-                renderNextFrame();
-            });
-
-            // ── Phase 2: Save or convert ──
-            fill.style.width = '95%';
-            pct.textContent = '95%';
-
-            const renderedBuffer = await renderedBlob.arrayBuffer();
-
-            if (outputPath.endsWith('.webm')) {
-                text.textContent = 'Writing WebM...';
-                await window.zoomcast.writeFile({ filePath: outputPath, data: renderedBuffer });
-            } else {
-                // Save temp WebM, convert to MP4
-                text.textContent = 'Converting to MP4...';
-                const tmpPath = await window.zoomcast.saveTempVideo(renderedBuffer);
-
-                try {
-                    await window.zoomcast.simpleExport({
-                        inputPath: tmpPath,
-                        outputPath: outputPath,
-                        preset: 'ultrafast',
-                        crf: '22',
-                    });
-                } catch (ffmpegErr) {
-                    // FFmpeg failed — save as WebM
-                    const webmPath = outputPath.replace(/\\.mp4$/i, '.webm');
-                    await window.zoomcast.writeFile({ filePath: webmPath, data: renderedBuffer });
-                    outputPath = webmPath;
-                    text.textContent = 'Saved as WebM (FFmpeg unavailable)';
+                // Ship the raw buffer to main process → FFmpeg stdin
+                const writeResult = await window.zoomcast.writeFrame(imageData.data.buffer);
+                if (writeResult && !writeResult.ok) {
+                    throw new Error('FFmpeg pipe write failed: ' + writeResult.error);
                 }
+
+                // Update progress bar
+                const done = frameIdx + 1;
+                const percent = Math.round((done / totalFrames) * 90) + 5;
+                const elapsed = (Date.now() - startTs) / 1000;
+                const rate = done / elapsed;
+                const remaining = Math.max(0, (totalFrames - done) / rate);
+                const etaMin = Math.floor(remaining / 60);
+                const etaSec = Math.ceil(remaining % 60);
+                const etaStr = etaMin > 0 ? `${etaMin}m ${etaSec}s` : `${etaSec}s`;
+
+                fill.style.width = percent + '%';
+                pct.textContent = percent + '%';
+                text.textContent = `Encoding frame ${done}/${totalFrames} · ${rate.toFixed(1)} fps · ETA ${etaStr}`;
+
+                // Yield to the browser event loop so the UI stays responsive
+                if (done % 5 === 0) await new Promise(r => setTimeout(r, 0));
+            }
+
+            // ── Close FFmpeg stdin and wait for it to finish ──
+            fill.style.width = '96%';
+            pct.textContent = '96%';
+            text.textContent = 'Finalising video...';
+
+            const endResult = await window.zoomcast.endFFmpegStream();
+            if (!endResult.ok) {
+                throw new Error('FFmpeg encoding failed: ' + endResult.error);
             }
 
             fill.style.width = '100%';
             pct.textContent = '100%';
             text.textContent = 'Complete!';
 
-            // Show completion
+            // Show completion section
             document.getElementById('export-complete').classList.remove('hidden');
             document.getElementById('export-complete-path').textContent = outputPath;
             document.getElementById('btn-open-folder').onclick = () => window.zoomcast.showInFolder(outputPath);
@@ -932,9 +898,12 @@ class ZoomCastApp {
             };
 
         } catch (err) {
+            // Make sure we clean up to avoid a zombie FFmpeg process
+            try { await window.zoomcast.endFFmpegStream(); } catch (_) { /* ignore */ }
             fill.style.width = '0%';
             text.textContent = 'Export failed: ' + err.message;
             pct.textContent = '';
+            console.error('[Export]', err);
         }
 
         btn.disabled = false;
