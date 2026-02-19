@@ -75,6 +75,50 @@ html, body {
   user-select: none;
 }
 
+/* Hide the native OS cursor over the preview canvas so the
+   custom styled cursor drawn on the canvas is the only one visible. */
+#preview-canvas,
+.preview-wrapper {
+  cursor: none !important;
+}
+
+/* Restore natural cursors on all interactive controls so the
+   app remains fully usable. */
+button,
+input,
+select,
+label,
+a,
+.source-card,
+.record-btn,
+.action-btn,
+.ctrl-btn,
+.tb-btn,
+.icon-btn,
+.prop-range,
+.seg-prop-range,
+.seg-color-dot,
+.cursor-style-card,
+.toggle-slider,
+.color-input,
+.timeline-canvas {
+  cursor: default;
+}
+button:not(:disabled),
+.source-card,
+.record-btn:not(:disabled),
+.action-btn:not(:disabled),
+.ctrl-btn,
+.tb-btn,
+.icon-btn,
+.prop-range,
+.seg-prop-range,
+.seg-color-dot,
+.cursor-style-card,
+.toggle-slider {
+  cursor: pointer;
+}
+
 /* ═══ SCROLLBAR ═══ */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
