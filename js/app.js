@@ -357,17 +357,38 @@ class ZoomCastApp {
         if (!canvas || !video || video.readyState < 2) return;
 
         const wrapper = canvas.parentElement;
-        const ww = wrapper.clientWidth;
-        const wh = wrapper.clientHeight;
-        if (ww < 10 || wh < 10) return;
+        // Use getBoundingClientRect for the actual rendered size (accounts for padding correctly)
+        const wRect = wrapper.getBoundingClientRect();
+        // Subtract padding (12px top/bottom, 20px left/right as set in CSS)
+        const padX = 40; // 20px each side
+        const padY = 24; // 12px each side
+        const maxW = Math.max(1, wRect.width - padX);
+        const maxH = Math.max(1, wRect.height - padY);
 
-        const aspect = (video.videoWidth || 1920) / (video.videoHeight || 1080);
+        // True source aspect ratio
+        const srcW = video.videoWidth || 1920;
+        const srcH = video.videoHeight || 1080;
+        const aspect = srcW / srcH;
+
+        // Fit inside available box, preserving aspect ratio
         let cw, ch;
-        if (ww / wh > aspect) { ch = wh; cw = Math.round(ch * aspect); }
-        else { cw = ww; ch = Math.round(cw / aspect); }
+        if (maxW / maxH > aspect) {
+            // Too wide — constrain by height
+            ch = Math.floor(maxH);
+            cw = Math.floor(ch * aspect);
+        } else {
+            // Too tall — constrain by width
+            cw = Math.floor(maxW);
+            ch = Math.floor(cw / aspect);
+        }
+
+        // Ensure even numbers (better for video codecs)
+        cw = cw & ~1 || 2;
+        ch = ch & ~1 || 2;
 
         const dpr = window.devicePixelRatio || 1;
-        if (canvas.width !== cw * dpr || canvas.height !== ch * dpr) {
+        const needsResize = canvas.width !== cw * dpr || canvas.height !== ch * dpr;
+        if (needsResize) {
             canvas.width = cw * dpr;
             canvas.height = ch * dpr;
             canvas.style.width = cw + 'px';
