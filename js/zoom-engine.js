@@ -226,19 +226,28 @@ class ZoomEngine {
     }
 
     // ── Image cursor drawing ──
+    // BASE_CURSOR_PX is the target height of the rendered cursor image at scale=1.
+    // This keeps cursor size consistent no matter how large/small the source PNG is.
+    static BASE_CURSOR_PX = 32;
+
     static _drawImageCursor(ctx, x, y, scale, styleKey, type) {
         const images = this._cursorImages[styleKey];
         if (!images || !images[type]) return;
         const img = images[type];
         if (!img.complete || img.naturalWidth === 0) return;
 
-        const size = Math.max(img.naturalWidth, img.naturalHeight);
-        const drawSize = size * scale;
-        // Hotspot: top-left for arrow cursor, center for hand
+        // Fixed physical height: BASE_CURSOR_PX * scale (user slider)
+        const drawH = this.BASE_CURSOR_PX * scale;
+        // Preserve original aspect ratio
+        const drawW = drawH * (img.naturalWidth / img.naturalHeight);
+
+        // Hotspot alignment:
+        //   arrow (cur)  → tip at top-left corner of the image
+        //   hand         → fingertip roughly at (drawW*0.28, 0)
         if (type === 'cur') {
-            ctx.drawImage(img, x, y, drawSize, drawSize * (img.naturalHeight / img.naturalWidth));
+            ctx.drawImage(img, x, y, drawW, drawH);
         } else {
-            ctx.drawImage(img, x - drawSize * 0.35, y - drawSize * 0.1, drawSize, drawSize * (img.naturalHeight / img.naturalWidth));
+            ctx.drawImage(img, x - drawW * 0.28, y, drawW, drawH);
         }
     }
 

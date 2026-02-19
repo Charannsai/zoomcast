@@ -135,10 +135,24 @@ class ZoomCastApp {
                 }
             });
 
-            // Get display info for cursor normalization
+            // Match the selected source to its actual display for accurate cursor normalization.
+            // The source id is in the form "screen:N:M" where N is the display index.
             const displays = await window.zoomcast.getDisplays();
-            const display = displays[0];
+            let display = displays[0]; // fallback
+
+            if (this.selectedSource?.display_id) {
+                const matched = displays.find(d => String(d.id) === String(this.selectedSource.display_id));
+                if (matched) display = matched;
+            } else if (this.selectedSource?.id) {
+                // source id format: "screen:INDEX:..." — try to match by index
+                const parts = this.selectedSource.id.split(':');
+                const idx = parts.length > 1 ? parseInt(parts[1]) : NaN;
+                if (!isNaN(idx) && displays[idx]) display = displays[idx];
+            }
+
             this.displayBounds = display?.bounds || { x: 0, y: 0, width: 1920, height: 1080 };
+            // Also store the scale factor so cursor position accounts for HiDPI
+            this.displayScaleFactor = display?.scaleFactor || 1;
 
             // Setup MediaRecorder
             const quality = document.getElementById('quality-select').value;
