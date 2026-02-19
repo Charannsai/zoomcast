@@ -265,7 +265,7 @@
             <!-- Cut Tools Bar (visible in cut mode) -->
             <div id="cut-tools" class="cut-tools-bar hidden">
                 <div class="cut-tools-inner">
-                    <button id="btn-cut-at" class="cut-btn">
+                    <div class="cut-instruction">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2">
                             <circle cx="6" cy="6" r="3" />
@@ -274,23 +274,23 @@
                             <line x1="14.47" y1="14.48" x2="20" y2="20" />
                             <line x1="8.12" y1="8.12" x2="12" y2="12" />
                         </svg>
-                        Cut at Playhead
-                    </button>
-                    <button id="btn-split-at" class="cut-btn">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2">
-                            <line x1="12" y1="2" x2="12" y2="22" />
-                            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                        <span id="cut-selection-label">Drag on timeline to select a range</span>
+                    </div>
+                    <button id="btn-delete-selection" class="cut-btn cut-delete-btn" disabled>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                         </svg>
-                        Split at Playhead
+                        Delete Selection
                     </button>
                     <button id="btn-undo-cut" class="cut-btn warn-btn">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2">
                             <polyline points="9 14 4 9 9 4" />
                             <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
                         </svg>
-                        Undo Last Cut
+                        Undo
                     </button>
                     <span class="cut-count" id="cut-count">0 cuts</span>
                 </div>

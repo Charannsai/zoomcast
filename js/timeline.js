@@ -1,7 +1,8 @@
 /**
- * ZoomCast — Timeline Component v2
- * Canvas-based timeline with thumbnails, zoom segments, playhead,
- * improved drag interactions, cursor style feedback, and snapping.
+ * ZoomCast — Timeline Component v3
+ * - Zoom-mode: drag segments, seek on timeline
+ * - Cut-mode:  click+drag to rubber-band a selection range → "Delete Selection"
+ * - Cut zones rendered as hatched overlays
  */
 
 class Timeline {
@@ -10,29 +11,47 @@ class Timeline {
         this.ctx = canvas.getContext('2d');
         this.duration = options.duration || 1;
         this.segments = options.segments || [];
-        this.cuts = options.cuts || [];
+        this.cuts = options.cuts || [];            // Array of { tStart, tEnd }
         this.playhead = 0;
         this.selectedSeg = null;
         this.thumbnails = [];
+
+        // Callbacks
         this.onSeek = options.onSeek || (() => { });
         this.onSegmentSelect = options.onSegmentSelect || (() => { });
         this.onSegmentChange = options.onSegmentChange || (() => { });
+        this.onCutSelection = options.onCutSelection || (() => { }); // (selStart, selEnd) => void
 
         // Layout constants
-        this.THUMB_H = 50;
-        this.SEG_TRACK_Y = 56;
+        this.THUMB_H = 52;
+        this.SEG_TRACK_Y = 58;
         this.SEG_H = 28;
-        this.LABEL_Y = 90;
-        this.HANDLE_W = 10;       // Wider handle zone for easier grab
-        this.SNAP_PX = 6;         // Snap threshold in pixels
+        this.HANDLE_W = 10;
+        this.SNAP_PX = 6;
+
+        // Editor mode: 'zoom' | 'cut'
+        this.mode = 'zoom';
+
+        // Cut range selection state
+        this.cutSelection = null;  // { tStart, tEnd } or null
+        this._cutDragStart = null; // x px when drag began
 
         this._drag = null;
-        this._hoveredHandle = null; // For cursor style feedback
         this._setupEvents();
         this._resize();
 
         this._resizeObs = new ResizeObserver(() => this._resize());
         this._resizeObs.observe(canvas.parentElement);
+    }
+
+    setMode(mode) {
+        this.mode = mode;
+        if (mode === 'zoom') {
+            this.cutSelection = null;
+            this._cutDragStart = null;
+            this.onCutSelection(null, null);
+        }
+        this.draw();
     }
 
     _resize() {
@@ -51,7 +70,7 @@ class Timeline {
     _setupEvents() {
         this.canvas.addEventListener('mousedown', (e) => this._onMouseDown(e));
         this.canvas.addEventListener('mousemove', (e) => this._onMouseMove(e));
-        this.canvas.addEventListener('mouseup', () => this._onMouseUp());
+        this.canvas.addEventListener('mouseup', (e) => this._onMouseUp(e));
         this.canvas.addEventListener('mouseleave', () => { this._onMouseUp(); this._setCursor('default'); });
         this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
         this.canvas.addEventListener('dblclick', (e) => this._onDoubleClick(e));
@@ -59,17 +78,10 @@ class Timeline {
 
     _tToX(t) { return (t / Math.max(this.duration, 0.001)) * this.W; }
     _xToT(x) { return Math.max(0, Math.min(this.duration, (x / this.W) * this.duration)); }
+    _setCursor(cursor) { this.canvas.style.cursor = cursor; }
 
-    _setCursor(cursor) {
-        this.canvas.style.cursor = cursor;
-    }
-
-    /**
-     * Find what the mouse is hovering over in the segment track.
-     * Returns: { seg, zone } where zone is 'left'|'right'|'body'|null
-     */
+    // ─── Hit testing (zoom segments) ─────────────────────────────────
     _hitTest(x, y) {
-        // Check segments in reverse order (top-most first)
         for (let i = this.segments.length - 1; i >= 0; i--) {
             const seg = this.segments[i];
             const sx1 = this._tToX(seg.tStart);
@@ -78,58 +90,50 @@ class Timeline {
             const sy2 = sy1 + this.SEG_H;
 
             if (y >= sy1 - 2 && y <= sy2 + 2) {
-                // Left handle (wider grab zone)
-                if (x >= sx1 - 3 && x <= sx1 + this.HANDLE_W) {
-                    return { seg, zone: 'left' };
-                }
-                // Right handle
-                if (x >= sx2 - this.HANDLE_W && x <= sx2 + 3) {
-                    return { seg, zone: 'right' };
-                }
-                // Body
-                if (x >= sx1 && x <= sx2) {
-                    return { seg, zone: 'body' };
-                }
+                if (x >= sx1 - 3 && x <= sx1 + this.HANDLE_W) return { seg, zone: 'left' };
+                if (x >= sx2 - this.HANDLE_W && x <= sx2 + 3) return { seg, zone: 'right' };
+                if (x >= sx1 && x <= sx2) return { seg, zone: 'body' };
             }
         }
         return null;
     }
 
-    /**
-     * Snap a time value to the playhead or other segment edges.
-     */
     _snap(t, exclude = null) {
         const threshold = this._xToT(this.SNAP_PX) - this._xToT(0);
-
-        // Snap to playhead
         if (Math.abs(t - this.playhead) < threshold) return this.playhead;
-
-        // Snap to segment edges
         for (const seg of this.segments) {
             if (seg === exclude) continue;
             if (Math.abs(t - seg.tStart) < threshold) return seg.tStart;
             if (Math.abs(t - seg.tEnd) < threshold) return seg.tEnd;
         }
-
-        // Snap to round time values (every 0.5s)
         const rounded = Math.round(t * 2) / 2;
         if (Math.abs(t - rounded) < threshold * 0.5) return rounded;
-
         return t;
     }
 
+    // ─── Mouse handlers ───────────────────────────────────────────────
     _onMouseDown(e) {
         const rect = this.canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
-        const hit = this._hitTest(x, y);
+        if (this.mode === 'cut') {
+            // Start dragging a cut selection range
+            this._cutDragStart = x;
+            const t = this._xToT(x);
+            this.cutSelection = { tStart: t, tEnd: t };
+            this.onCutSelection(t, t);
+            this._setCursor('col-resize');
+            this.draw();
+            return;
+        }
 
+        // Zoom mode — existing logic
+        const hit = this._hitTest(x, y);
         if (hit) {
             const { seg, zone } = hit;
             this.selectedSeg = seg;
             this.onSegmentSelect(seg);
-
             if (zone === 'left') {
                 this._drag = { seg, type: 'left', startX: x, origStart: seg.tStart, origEnd: seg.tEnd };
                 this._setCursor('ew-resize');
@@ -140,12 +144,11 @@ class Timeline {
                 this._drag = { seg, type: 'move', startX: x, origStart: seg.tStart, origEnd: seg.tEnd };
                 this._setCursor('grabbing');
             }
-
             this.draw();
             return;
         }
 
-        // Nothing hit — seek to position, deselect
+        // Seek
         this.selectedSeg = null;
         this.onSegmentSelect(null);
         const t = this._xToT(x);
@@ -160,7 +163,22 @@ class Timeline {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
-        // Dragging
+        if (this.mode === 'cut') {
+            if (this._cutDragStart !== null) {
+                const tA = this._xToT(this._cutDragStart);
+                const tB = this._xToT(x);
+                const tStart = Math.min(tA, tB);
+                const tEnd = Math.max(tA, tB);
+                this.cutSelection = { tStart, tEnd };
+                this.onCutSelection(tStart, tEnd);
+                this.draw();
+            } else {
+                this._setCursor('col-resize');
+            }
+            return;
+        }
+
+        // Zoom mode — drag logic
         if (this._drag) {
             if (this._drag.type === 'seek') {
                 const t = this._xToT(x);
@@ -169,11 +187,9 @@ class Timeline {
                 this.draw();
                 return;
             }
-
             const { seg, type, startX, origStart, origEnd } = this._drag;
             const dt = this._xToT(x) - this._xToT(startX);
-            const minDur = 0.15; // Minimum segment duration
-
+            const minDur = 0.15;
             if (type === 'left') {
                 let newStart = origStart + dt;
                 newStart = Math.max(0, Math.min(origEnd - minDur, newStart));
@@ -192,43 +208,44 @@ class Timeline {
                 seg.tStart = newStart;
                 seg.tEnd = newStart + dur;
             }
-
             this.onSegmentChange(seg);
             this.draw();
             return;
         }
 
-        // Hovering — update cursor style
+        // Hover cursor feedback
         const hit = this._hitTest(x, y);
         if (hit) {
-            if (hit.zone === 'left' || hit.zone === 'right') {
-                this._setCursor('ew-resize');
-            } else {
-                this._setCursor('grab');
-            }
+            this._setCursor(hit.zone === 'body' ? 'grab' : 'ew-resize');
         } else {
             this._setCursor('default');
         }
     }
 
-    _onMouseUp() {
-        if (this._drag && this._drag.type !== 'seek') {
-            // Finalize drag — trigger change event
-            if (this._drag.seg) {
-                this.onSegmentChange(this._drag.seg);
+    _onMouseUp(e) {
+        if (this.mode === 'cut') {
+            // Finalize cut selection
+            if (this.cutSelection && this.cutSelection.tEnd - this.cutSelection.tStart < 0.02) {
+                // Tiny drag = deselect
+                this.cutSelection = null;
+                this.onCutSelection(null, null);
             }
+            this._cutDragStart = null;
+            this._setCursor('col-resize');
+            this.draw();
+            return;
+        }
+        if (this._drag && this._drag.type !== 'seek' && this._drag.seg) {
+            this.onSegmentChange(this._drag.seg);
         }
         this._drag = null;
     }
 
-    /**
-     * Double-click to jump playhead to segment center.
-     */
     _onDoubleClick(e) {
+        if (this.mode === 'cut') return;
         const rect = this.canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-
         const hit = this._hitTest(x, y);
         if (hit && hit.seg) {
             const mid = (hit.seg.tStart + hit.seg.tEnd) / 2;
@@ -240,9 +257,7 @@ class Timeline {
         }
     }
 
-    /**
-     * Generate thumbnails from a video element.
-     */
+    // ─── Thumbnails ────────────────────────────────────────────────────
     async generateThumbnails(video) {
         this.thumbnails = [];
         const count = Math.min(80, Math.max(20, Math.floor(this.W / 30)));
@@ -271,6 +286,7 @@ class Timeline {
         this.draw();
     }
 
+    // ─── Main Draw ─────────────────────────────────────────────────────
     draw() {
         const { ctx, W, H } = this;
         if (!W) return;
@@ -278,7 +294,7 @@ class Timeline {
         ctx.clearRect(0, 0, W, H);
 
         // Background
-        ctx.fillStyle = '#1e222b';
+        ctx.fillStyle = '#1a1e27';
         ctx.fillRect(0, 0, W, H);
 
         // Thumbnail strip
@@ -290,50 +306,56 @@ class Timeline {
                 x += thumb.w;
             }
             // Dim overlay
-            ctx.fillStyle = 'rgba(14, 16, 21, 0.45)';
+            ctx.fillStyle = 'rgba(12, 15, 22, 0.48)';
             ctx.fillRect(0, 0, W, this.THUMB_H);
         }
 
-        // Separator line
-        ctx.fillStyle = '#2a303c';
+        // Separator
+        ctx.fillStyle = '#262d3a';
         ctx.fillRect(0, this.THUMB_H, W, 1);
 
-        // Segment track background (subtle)
+        // Segment track bg
         ctx.fillStyle = 'rgba(255,255,255,0.02)';
         ctx.fillRect(0, this.SEG_TRACK_Y - 2, W, this.SEG_H + 4);
 
-        // Time labels
+        // Time tick marks + labels
         const numLabels = Math.min(20, Math.floor(W / 60));
         ctx.font = '10px Inter, sans-serif';
-        ctx.fillStyle = '#606a78';
+        ctx.fillStyle = '#4d5666';
         for (let i = 0; i <= numLabels; i++) {
             const t = (this.duration * i) / numLabels;
             const x = this._tToX(t);
+            ctx.fillStyle = '#333d4d';
             ctx.fillRect(x, this.THUMB_H, 1, 4);
             if (i % 2 === 0) {
+                ctx.fillStyle = '#4d5666';
                 ctx.fillText(this._formatTime(t), x + 2, this.THUMB_H + 14);
             }
         }
 
-        // Zoom segments (bottom to top for correct overlap)
+        // Zoom segments
         for (const seg of this.segments) {
             this._drawSegment(ctx, seg);
         }
 
-        // Cut zones (rendered on top of thumbnails and segments)
+        // Committed cut zones
         this._drawCutZones(ctx, W, H);
 
-        // Snap guide lines (while dragging)
-        if (this._drag && this._drag.seg) {
+        // Live cut selection while dragging (in cut mode)
+        if (this.mode === 'cut' && this.cutSelection &&
+            this.cutSelection.tEnd - this.cutSelection.tStart > 0.005) {
+            this._drawSelectionRange(ctx, W, H);
+        }
+
+        // Snap guides (zoom mode)
+        if (this.mode === 'zoom' && this._drag && this._drag.seg) {
             this._drawSnapGuides(ctx);
         }
 
         // Playhead
         const px = this._tToX(this.playhead);
-        ctx.fillStyle = 'white';
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
         ctx.fillRect(px - 1, 0, 2, H);
-
-        // Playhead triangle
         ctx.beginPath();
         ctx.moveTo(px - 6, 0);
         ctx.lineTo(px + 6, 0);
@@ -341,14 +363,123 @@ class Timeline {
         ctx.closePath();
         ctx.fill();
 
-        // Playhead time tooltip
+        // Playhead time
         ctx.font = 'bold 9px Inter, sans-serif';
-        ctx.fillStyle = '#4f8ff7';
+        ctx.fillStyle = '#6aa3f8';
         ctx.textAlign = 'center';
         ctx.fillText(this._formatTime(this.playhead), px, H - 4);
         ctx.textAlign = 'start';
+
+        // Cut mode hint
+        if (this.mode === 'cut' && !this.cutSelection) {
+            ctx.fillStyle = 'rgba(232, 67, 147, 0.55)';
+            ctx.font = 'bold 11px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('← Drag to select a range to cut →', W / 2, H / 2 + 4);
+            ctx.textAlign = 'start';
+        }
     }
 
+    // ─── Selection Range (live drag in cut mode) ───────────────────────
+    _drawSelectionRange(ctx, W, H) {
+        const { tStart, tEnd } = this.cutSelection;
+        const x1 = this._tToX(tStart);
+        const x2 = this._tToX(tEnd);
+        const w = Math.max(x2 - x1, 2);
+
+        // Main fill
+        ctx.fillStyle = 'rgba(232, 67, 147, 0.18)';
+        ctx.fillRect(x1, 0, w, H);
+
+        // Hatched stripes
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x1, 0, w, H);
+        ctx.clip();
+        ctx.strokeStyle = 'rgba(232, 67, 147, 0.3)';
+        ctx.lineWidth = 1;
+        for (let i = -H; i < w + H; i += 7) {
+            ctx.beginPath();
+            ctx.moveTo(x1 + i, 0);
+            ctx.lineTo(x1 + i + H, H);
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        // Edge lines
+        ctx.strokeStyle = 'rgba(232, 67, 147, 0.9)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(x1, 0); ctx.lineTo(x1, H); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x2, 0); ctx.lineTo(x2, H); ctx.stroke();
+
+        // Handle grips on edges
+        const gripH = 20;
+        const gripY = (H - gripH) / 2;
+        ctx.fillStyle = 'rgba(232, 67, 147, 0.85)';
+        this._roundRectFill(ctx, x1 - 3, gripY, 6, gripH, 3);
+        this._roundRectFill(ctx, x2 - 3, gripY, 6, gripH, 3);
+
+        // Duration badge in center
+        if (w > 60) {
+            const dur = (tEnd - tStart).toFixed(2) + 's';
+            const label = '✂ ' + dur;
+            ctx.font = 'bold 11px Inter, sans-serif';
+            const tw = ctx.measureText(label).width + 16;
+            const bx = x1 + w / 2 - tw / 2;
+            const by = H / 2 - 10;
+            // Badge bg
+            ctx.fillStyle = 'rgba(232, 67, 147, 0.92)';
+            this._roundRectFill(ctx, bx, by, tw, 20, 10);
+            // Badge text
+            ctx.fillStyle = 'white';
+            ctx.textAlign = 'center';
+            ctx.fillText(label, x1 + w / 2, by + 14);
+            ctx.textAlign = 'start';
+        }
+    }
+
+    // ─── Committed Cut Zones ──────────────────────────────────────────
+    _drawCutZones(ctx, W, H) {
+        if (!this.cuts || this.cuts.length === 0) return;
+        for (const cut of this.cuts) {
+            const x1 = this._tToX(cut.tStart);
+            const x2 = this._tToX(cut.tEnd);
+            const w = Math.max(x2 - x1, 3);
+
+            ctx.fillStyle = 'rgba(180, 40, 100, 0.25)';
+            ctx.fillRect(x1, 0, w, H);
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x1, 0, w, H);
+            ctx.clip();
+            ctx.strokeStyle = 'rgba(200, 50, 110, 0.35)';
+            ctx.lineWidth = 1;
+            for (let i = -H; i < w + H; i += 6) {
+                ctx.beginPath();
+                ctx.moveTo(x1 + i, 0);
+                ctx.lineTo(x1 + i + H, H);
+                ctx.stroke();
+            }
+            ctx.restore();
+
+            ctx.fillStyle = 'rgba(220, 60, 120, 0.85)';
+            ctx.fillRect(x1, 0, 2, H);
+            ctx.fillRect(x2 - 2, 0, 2, H);
+
+            if (w > 16) {
+                ctx.font = '12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('✂', x1 + w / 2, H / 2);
+                ctx.textAlign = 'start';
+                ctx.textBaseline = 'alphabetic';
+            }
+        }
+    }
+
+    // ─── Zoom Segment Drawing ─────────────────────────────────────────
     _drawSegment(ctx, seg) {
         const x1 = this._tToX(seg.tStart);
         const x2 = this._tToX(seg.tEnd);
@@ -356,7 +487,7 @@ class Timeline {
         const w = Math.max(x2 - x1, 4);
         const selected = seg === this.selectedSeg;
 
-        // Ease indicators (gradient tails behind the segment)
+        // Ease tails
         if (seg.easeIn > 0) {
             const ex = this._tToX(seg.tStart - seg.easeIn);
             const grad = ctx.createLinearGradient(ex, 0, x1, 0);
@@ -374,15 +505,11 @@ class Timeline {
             this._roundRectFill(ctx, x2, y1, ex - x2, this.SEG_H, 3);
         }
 
-        // Segment body fill
-        if (selected) {
-            ctx.fillStyle = seg.color;
-        } else {
-            ctx.fillStyle = seg.color + 'bb';
-        }
+        // Segment body
+        ctx.fillStyle = selected ? seg.color : seg.color + 'bb';
         this._roundRectFill(ctx, x1, y1, w, this.SEG_H, 5);
 
-        // Inner gradient highlight (top edge glow)
+        // Inner gloss
         const innerGrad = ctx.createLinearGradient(0, y1, 0, y1 + this.SEG_H);
         innerGrad.addColorStop(0, 'rgba(255,255,255,0.15)');
         innerGrad.addColorStop(0.5, 'rgba(255,255,255,0)');
@@ -397,30 +524,27 @@ class Timeline {
             this._roundRectStroke(ctx, x1, y1, w, this.SEG_H, 5);
         }
 
-        // Resize handles (visible bars on edges)
+        // Resize handles
         const handleH = Math.min(16, this.SEG_H - 6);
         const handleY = y1 + (this.SEG_H - handleH) / 2;
-        ctx.fillStyle = selected ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.5)';
-        // Left handle = 2 thin bars
+        ctx.fillStyle = selected ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.45)';
         ctx.fillRect(x1 + 3, handleY, 1.5, handleH);
         ctx.fillRect(x1 + 6, handleY, 1.5, handleH);
-        // Right handle = 2 thin bars
         ctx.fillRect(x2 - 4.5, handleY, 1.5, handleH);
         ctx.fillRect(x2 - 7.5, handleY, 1.5, handleH);
 
-        // Label (zoom factor + duration)
+        // Label
         if (w > 40) {
-            const label = `×${seg.factor.toFixed(1)}`;
             ctx.font = 'bold 10px Inter, sans-serif';
             ctx.fillStyle = 'white';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(label, x1 + w / 2, y1 + this.SEG_H / 2);
+            ctx.fillText(`×${seg.factor.toFixed(1)}`, x1 + w / 2, y1 + this.SEG_H / 2);
             ctx.textAlign = 'start';
             ctx.textBaseline = 'alphabetic';
         }
 
-        // Duration text above the segment
+        // Duration
         if (w > 50 && selected) {
             const dur = (seg.tEnd - seg.tStart).toFixed(1) + 's';
             ctx.font = '9px Inter, sans-serif';
@@ -431,93 +555,32 @@ class Timeline {
         }
     }
 
-    /**
-     * Draw cut zones as hatched red overlays across the full timeline height.
-     */
-    _drawCutZones(ctx, W, H) {
-        if (!this.cuts || this.cuts.length === 0) return;
-
-        for (const cut of this.cuts) {
-            const x1 = this._tToX(cut.tStart);
-            const x2 = this._tToX(cut.tEnd);
-            const w = Math.max(x2 - x1, 2);
-
-            // Red translucent fill
-            ctx.fillStyle = 'rgba(232, 67, 147, 0.22)';
-            ctx.fillRect(x1, 0, w, H);
-
-            // Hatching pattern
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(x1, 0, w, H);
-            ctx.clip();
-            ctx.strokeStyle = 'rgba(232, 67, 147, 0.35)';
-            ctx.lineWidth = 1;
-            const spacing = 6;
-            for (let i = -H; i < w + H; i += spacing) {
-                ctx.beginPath();
-                ctx.moveTo(x1 + i, 0);
-                ctx.lineTo(x1 + i + H, H);
-                ctx.stroke();
-            }
-            ctx.restore();
-
-            // Vertical border lines
-            ctx.fillStyle = 'rgba(232, 67, 147, 0.8)';
-            ctx.fillRect(x1, 0, 2, H);
-            ctx.fillRect(x2 - 2, 0, 2, H);
-
-            // Scissors icon text
-            if (w > 14) {
-                ctx.font = '12px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText('✂', x1 + w / 2, H / 2);
-                ctx.textAlign = 'start';
-                ctx.textBaseline = 'alphabetic';
-            }
-        }
-    }
-
-    /**
-     * Draw vertical snap guide lines while dragging.
-     */
     _drawSnapGuides(ctx) {
         if (!this._drag || !this._drag.seg) return;
         const seg = this._drag.seg;
         const edges = [seg.tStart, seg.tEnd];
         const threshold = this._xToT(this.SNAP_PX) - this._xToT(0);
 
-        // Check against playhead
         for (const edge of edges) {
             if (Math.abs(edge - this.playhead) < threshold * 1.5) {
                 const x = this._tToX(this.playhead);
                 ctx.setLineDash([3, 3]);
                 ctx.strokeStyle = '#4f8ff7';
                 ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(x, 0);
-                ctx.lineTo(x, this.H);
-                ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, this.H); ctx.stroke();
                 ctx.setLineDash([]);
             }
         }
-
-        // Check against other segment edges
         for (const otherSeg of this.segments) {
             if (otherSeg === seg) continue;
-            const otherEdges = [otherSeg.tStart, otherSeg.tEnd];
-            for (const otherEdge of otherEdges) {
+            for (const otherEdge of [otherSeg.tStart, otherSeg.tEnd]) {
                 for (const edge of edges) {
                     if (Math.abs(edge - otherEdge) < threshold * 1.5) {
                         const x = this._tToX(otherEdge);
                         ctx.setLineDash([2, 4]);
                         ctx.strokeStyle = '#f5a623';
                         ctx.lineWidth = 1;
-                        ctx.beginPath();
-                        ctx.moveTo(x, 0);
-                        ctx.lineTo(x, this.H);
-                        ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, this.H); ctx.stroke();
                         ctx.setLineDash([]);
                     }
                 }
@@ -525,6 +588,7 @@ class Timeline {
         }
     }
 
+    // ─── Helpers ──────────────────────────────────────────────────────
     _roundRectFill(ctx, x, y, w, h, r) {
         if (w <= 0 || h <= 0) return;
         r = Math.min(r, w / 2, h / 2);

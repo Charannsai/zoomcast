@@ -291,8 +291,7 @@ class ZoomCastApp {
         document.getElementById('btn-play').onclick = () => this._togglePlayback();
         document.getElementById('btn-seek-start').onclick = () => this._seek(0);
         document.getElementById('btn-seek-end').onclick = () => this._seek(this.duration);
-        document.getElementById('btn-cut-at').onclick = () => this._cutAtPlayhead();
-        document.getElementById('btn-split-at').onclick = () => this._splitAtPlayhead();
+        document.getElementById('btn-delete-selection').onclick = () => this._deleteSelection();
         document.getElementById('btn-undo-cut').onclick = () => this._undoLastCut();
 
         // Mode toggles
@@ -307,6 +306,9 @@ class ZoomCastApp {
         document.getElementById('mode-zoom').classList.toggle('active', mode === 'zoom');
         document.getElementById('mode-cut').classList.toggle('active', mode === 'cut');
         document.getElementById('cut-tools').classList.toggle('hidden', mode !== 'cut');
+        // Sync timeline mode so it knows to use rubber-band selection
+        if (this.timeline) this.timeline.setMode(mode);
+        this._updateDeleteSelectionBtn();
     }
 
     _initEditor() {
@@ -316,6 +318,10 @@ class ZoomCastApp {
 
         this.previewCanvas = document.getElementById('preview-canvas');
         this.previewCtx = this.previewCanvas.getContext('2d', { willReadFrequently: false });
+
+        // Reset cut selection state
+        this._pendingCutStart = null;
+        this._pendingCutEnd = null;
 
         const tlCanvas = document.getElementById('timeline-canvas');
         this.timeline = new Timeline(tlCanvas, {
@@ -327,6 +333,12 @@ class ZoomCastApp {
             onSegmentChange: (seg) => {
                 this._refreshPreview();
                 if (seg === this.timeline.selectedSeg) this._onSegmentSelect(seg);
+            },
+            // Called when user drags a cut range selection on the timeline
+            onCutSelection: (tStart, tEnd) => {
+                this._pendingCutStart = tStart;
+                this._pendingCutEnd = tEnd;
+                this._updateDeleteSelectionBtn();
             },
         });
 
@@ -460,40 +472,50 @@ class ZoomCastApp {
         btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
     }
 
-    // ─── Cut & Split ─────────────────────────────────────────────
+    // ─── Cut (Range Selection) ────────────────────────────────────
 
     /**
-     * Mark a cut zone: removes a short section around the playhead.
-     * Default cut width = 0.5s centered on playhead.
+     * Called by timeline's onCutSelection callback.
+     * Updates the Delete Selection button state.
      */
-    _cutAtPlayhead() {
-        const halfWidth = 0.25; // 0.5s total cut
-        const tStart = Math.max(0, this.playhead - halfWidth);
-        const tEnd = Math.min(this.duration, this.playhead + halfWidth);
-        if (tEnd - tStart < 0.05) return;
+    _updateDeleteSelectionBtn() {
+        const btn = document.getElementById('btn-delete-selection');
+        const label = document.getElementById('cut-selection-label');
+        const hasSel = (this._pendingCutStart !== null &&
+            this._pendingCutEnd !== null &&
+            this._pendingCutEnd - this._pendingCutStart > 0.02);
 
-        this.cuts.push({ tStart, tEnd });
-        if (this.timeline) {
-            this.timeline.cuts = this.cuts;
-            this.timeline.draw();
+        if (btn) btn.disabled = !hasSel;
+        if (label && hasSel) {
+            const dur = (this._pendingCutEnd - this._pendingCutStart).toFixed(2);
+            label.textContent = `${dur}s selected`;
+        } else if (label) {
+            label.textContent = 'Drag timeline to select';
         }
-        this._updateCutCount();
-        this._refreshPreview();
     }
 
     /**
-     * Split the video at the playhead — jumps playhead to just after the cut.
+     * Commit the current rubber-band selection as a cut zone.
      */
-    _splitAtPlayhead() {
-        const tStart = this.playhead;
-        const tEnd = Math.min(this.duration, this.playhead + 0.05);
+    _deleteSelection() {
+        if (this._pendingCutStart === null || this._pendingCutEnd === null) return;
+        const tStart = Math.min(this._pendingCutStart, this._pendingCutEnd);
+        const tEnd = Math.max(this._pendingCutStart, this._pendingCutEnd);
+        if (tEnd - tStart < 0.02) return;
+
         this.cuts.push({ tStart, tEnd });
+        this._pendingCutStart = null;
+        this._pendingCutEnd = null;
+
+        // Clear the live selection on the timeline
         if (this.timeline) {
+            this.timeline.cutSelection = null;
             this.timeline.cuts = this.cuts;
             this.timeline.draw();
         }
         this._updateCutCount();
-        this._seek(tEnd);
+        this._updateDeleteSelectionBtn();
+        this._refreshPreview();
     }
 
     _undoLastCut() {
