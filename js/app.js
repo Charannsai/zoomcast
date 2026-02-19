@@ -1,6 +1,7 @@
 /**
- * ZoomCast — Main Application Controller
- * Manages screens, recording, editing, and export orchestration.
+ * ZoomCast — Main Application Controller v5
+ * Features: Cutting/splitting, motion blur, cursor anim types,
+ *           zoom pan speed, smart cursor follow, quality preview
  */
 
 class ZoomCastApp {
@@ -23,12 +24,18 @@ class ZoomCastApp {
         this.duration = 0;
         this.segments = [];
 
+        // Cut segments (ranges to remove) — array of { tStart, tEnd }
+        this.cuts = [];
+
         // Editor state
         this.timeline = null;
         this.playhead = 0;
         this.isPlaying = false;
         this.playInterval = null;
         this.cursorStyle = 'style1';
+
+        // Editor mode: 'zoom' | 'cut'
+        this.editorMode = 'zoom';
 
         this._init();
     }
@@ -123,8 +130,6 @@ class ZoomCastApp {
         if (!this.selectedSource) return;
 
         try {
-            // Get media stream — no min/maxFrameRate constraints
-            // (restrictive FPS constraints freeze the capture pipeline on many GPUs)
             this.mediaStream = await navigator.mediaDevices.getUserMedia({
                 audio: false,
                 video: {
@@ -135,34 +140,27 @@ class ZoomCastApp {
                 }
             });
 
-            // Match the selected source to its actual display for accurate cursor normalization.
-            // The source id is in the form "screen:N:M" where N is the display index.
             const displays = await window.zoomcast.getDisplays();
-            let display = displays[0]; // fallback
+            let display = displays[0];
 
             if (this.selectedSource?.display_id) {
                 const matched = displays.find(d => String(d.id) === String(this.selectedSource.display_id));
                 if (matched) display = matched;
             } else if (this.selectedSource?.id) {
-                // source id format: "screen:INDEX:..." — try to match by index
                 const parts = this.selectedSource.id.split(':');
                 const idx = parts.length > 1 ? parseInt(parts[1]) : NaN;
                 if (!isNaN(idx) && displays[idx]) display = displays[idx];
             }
 
             this.displayBounds = display?.bounds || { x: 0, y: 0, width: 1920, height: 1080 };
-            // Also store the scale factor so cursor position accounts for HiDPI
             this.displayScaleFactor = display?.scaleFactor || 1;
 
-            // Setup MediaRecorder
             const quality = document.getElementById('quality-select').value;
-            const bitrate = quality === 'ultra' ? 12000000 : quality === 'high' ? 8000000 : 4000000;
+            const bitrate = quality === 'ultra' ? 16000000 : quality === 'high' ? 10000000 : 5000000;
 
             this.recordedChunks = [];
             this.clickData = [];
 
-            // Use VP8 — VP9 real-time encoding is far too CPU-heavy and causes
-            // frame freezes / dropped frames during recording
             this.mediaRecorder = new MediaRecorder(this.mediaStream, {
                 mimeType: 'video/webm;codecs=vp8',
                 videoBitsPerSecond: bitrate,
@@ -174,19 +172,14 @@ class ZoomCastApp {
 
             this.mediaRecorder.onstop = () => this._onRecordingComplete();
 
-            // Start
-            this.mediaRecorder.start(1000); // collect every 1s (less overhead than 100ms)
+            this.mediaRecorder.start(1000);
             this.isRecording = true;
             this.isPaused = false;
             this.recStartTime = Date.now();
 
-            // Start cursor tracking in main process
             await window.zoomcast.startTracking(this.displayBounds);
 
-            // Show recording overlay
             document.getElementById('recording-overlay').classList.remove('hidden');
-
-            // Start timer
             this.timerInterval = setInterval(() => this._updateTimer(), 50);
 
         } catch (err) {
@@ -216,22 +209,18 @@ class ZoomCastApp {
 
         if (this.timerInterval) clearInterval(this.timerInterval);
 
-        // Stop MediaRecorder
         if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
             this.mediaRecorder.stop();
         }
 
-        // Stop media stream
         if (this.mediaStream) {
             this.mediaStream.getTracks().forEach(t => t.stop());
         }
 
-        // Stop cursor tracking and get data
         const trackData = await window.zoomcast.stopTracking();
         this.cursorData = trackData.cursor || [];
         this.clickData = [...this.clickData, ...(trackData.clicks || [])];
 
-        // Remove duplicate clicks
         const seen = new Set();
         this.clickData = this.clickData.filter(c => {
             const key = `${c.t.toFixed(2)}_${c.x.toFixed(3)}`;
@@ -257,16 +246,13 @@ class ZoomCastApp {
         this.videoBlob = new Blob(this.recordedChunks, { type: 'video/webm' });
         this.videoUrl = URL.createObjectURL(this.videoBlob);
 
-        // Hide recording overlay
         document.getElementById('recording-overlay').classList.add('hidden');
 
-        // Load video to get duration
         const video = document.getElementById('hidden-video');
         video.src = this.videoUrl;
 
         await new Promise((resolve) => {
             video.onloadedmetadata = () => {
-                // WebM duration fix
                 if (video.duration === Infinity || isNaN(video.duration)) {
                     video.currentTime = 1e10;
                     video.ontimeupdate = () => {
@@ -281,15 +267,14 @@ class ZoomCastApp {
         });
 
         this.duration = video.duration;
+        this.cuts = [];
 
-        // Auto-generate zoom segments if enabled
         if (document.getElementById('auto-zoom-toggle').checked && this.clickData.length > 0) {
             this.segments = ZoomEngine.autoGenerateZooms(this.clickData, this.duration);
         } else {
             this.segments = [];
         }
 
-        // Switch to editor
         this._initEditor();
         this._showScreen('editor');
     }
@@ -306,6 +291,22 @@ class ZoomCastApp {
         document.getElementById('btn-play').onclick = () => this._togglePlayback();
         document.getElementById('btn-seek-start').onclick = () => this._seek(0);
         document.getElementById('btn-seek-end').onclick = () => this._seek(this.duration);
+        document.getElementById('btn-cut-at').onclick = () => this._cutAtPlayhead();
+        document.getElementById('btn-split-at').onclick = () => this._splitAtPlayhead();
+        document.getElementById('btn-undo-cut').onclick = () => this._undoLastCut();
+
+        // Mode toggles
+        const modeZoom = document.getElementById('mode-zoom');
+        const modeCut = document.getElementById('mode-cut');
+        if (modeZoom) modeZoom.onclick = () => this._setEditorMode('zoom');
+        if (modeCut) modeCut.onclick = () => this._setEditorMode('cut');
+    }
+
+    _setEditorMode(mode) {
+        this.editorMode = mode;
+        document.getElementById('mode-zoom').classList.toggle('active', mode === 'zoom');
+        document.getElementById('mode-cut').classList.toggle('active', mode === 'cut');
+        document.getElementById('cut-tools').classList.toggle('hidden', mode !== 'cut');
     }
 
     _initEditor() {
@@ -313,28 +314,23 @@ class ZoomCastApp {
         const meta = document.getElementById('editor-meta');
         meta.textContent = `${Math.round(this.duration * 30)} frames · ${this.duration.toFixed(1)}s · ${this.segments.length} zooms`;
 
-        // Setup preview canvas
         this.previewCanvas = document.getElementById('preview-canvas');
-        this.previewCtx = this.previewCanvas.getContext('2d');
+        this.previewCtx = this.previewCanvas.getContext('2d', { willReadFrequently: false });
 
-        // Setup timeline
         const tlCanvas = document.getElementById('timeline-canvas');
         this.timeline = new Timeline(tlCanvas, {
             duration: this.duration,
             segments: this.segments,
+            cuts: this.cuts,
             onSeek: (t) => this._seek(t),
             onSegmentSelect: (seg) => this._onSegmentSelect(seg),
             onSegmentChange: (seg) => {
                 this._refreshPreview();
-                // Update segment props panel if the changed segment is selected
                 if (seg === this.timeline.selectedSeg) this._onSegmentSelect(seg);
             },
         });
 
-        // Generate thumbnails (async, non-blocking)
         this.timeline.generateThumbnails(video);
-
-        // Initial preview
         this._seek(0);
     }
 
@@ -350,7 +346,7 @@ class ZoomCastApp {
         await new Promise(resolve => {
             const done = () => { video.removeEventListener('seeked', done); resolve(); };
             video.addEventListener('seeked', done);
-            setTimeout(done, 500); // fallback
+            setTimeout(done, 500);
         });
         this._drawPreviewFrame(video);
         this._updateTimeDisplay();
@@ -382,7 +378,6 @@ class ZoomCastApp {
         const config = this._getConfig();
         config.outWidth = cw;
         config.outHeight = ch;
-        // Cursor overlay is OFF by default (system cursor is already in the recording)
         config.cursorData = document.getElementById('cursor-toggle')?.checked ? this.cursorData : null;
         config.clickData = document.getElementById('click-effects-toggle')?.checked ? this.clickData : null;
 
@@ -444,11 +439,62 @@ class ZoomCastApp {
         btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
     }
 
+    // ─── Cut & Split ─────────────────────────────────────────────
+
+    /**
+     * Mark a cut zone: removes a short section around the playhead.
+     * Default cut width = 0.5s centered on playhead.
+     */
+    _cutAtPlayhead() {
+        const halfWidth = 0.25; // 0.5s total cut
+        const tStart = Math.max(0, this.playhead - halfWidth);
+        const tEnd = Math.min(this.duration, this.playhead + halfWidth);
+        if (tEnd - tStart < 0.05) return;
+
+        this.cuts.push({ tStart, tEnd });
+        if (this.timeline) {
+            this.timeline.cuts = this.cuts;
+            this.timeline.draw();
+        }
+        this._updateCutCount();
+        this._refreshPreview();
+    }
+
+    /**
+     * Split the video at the playhead — jumps playhead to just after the cut.
+     */
+    _splitAtPlayhead() {
+        const tStart = this.playhead;
+        const tEnd = Math.min(this.duration, this.playhead + 0.05);
+        this.cuts.push({ tStart, tEnd });
+        if (this.timeline) {
+            this.timeline.cuts = this.cuts;
+            this.timeline.draw();
+        }
+        this._updateCutCount();
+        this._seek(tEnd);
+    }
+
+    _undoLastCut() {
+        if (this.cuts.length === 0) return;
+        this.cuts.pop();
+        if (this.timeline) {
+            this.timeline.cuts = this.cuts;
+            this.timeline.draw();
+        }
+        this._updateCutCount();
+        this._refreshPreview();
+    }
+
+    _updateCutCount() {
+        const el = document.getElementById('cut-count');
+        if (el) el.textContent = `${this.cuts.length} cut${this.cuts.length !== 1 ? 's' : ''}`;
+    }
+
     _addZoomAtPlayhead() {
         const dur = Math.min(2.5, this.duration - this.playhead);
         if (dur < 0.2) return;
 
-        // Find cursor position near playhead
         let cx = 0.5, cy = 0.5;
         if (this.cursorData.length > 0) {
             const nearest = this.cursorData.reduce((best, c) =>
@@ -495,9 +541,6 @@ class ZoomCastApp {
         this._refreshPreview();
     }
 
-    /**
-     * Helper to refresh the preview at the current playhead
-     */
     _refreshPreview() {
         const video = document.getElementById('hidden-video');
         if (video && video.src) this._drawPreviewFrame(video);
@@ -591,15 +634,12 @@ class ZoomCastApp {
             if (durEl) durEl.textContent = (seg.tEnd - seg.tStart).toFixed(2) + 's';
         };
 
-        // Zoom factor
         document.getElementById('seg-factor').oninput = (e) => {
             seg.factor = parseFloat(e.target.value);
             document.getElementById('seg-factor-val').textContent = seg.factor.toFixed(1) + '×';
             updateHeader();
             redraw();
         };
-
-        // Start time
         document.getElementById('seg-start').onchange = (e) => {
             let val = parseFloat(e.target.value);
             val = Math.max(0, Math.min(seg.tEnd - 0.1, val));
@@ -608,8 +648,6 @@ class ZoomCastApp {
             updateHeader();
             redraw();
         };
-
-        // End time
         document.getElementById('seg-end').onchange = (e) => {
             let val = parseFloat(e.target.value);
             val = Math.max(seg.tStart + 0.1, Math.min(this.duration, val));
@@ -618,36 +656,27 @@ class ZoomCastApp {
             updateHeader();
             redraw();
         };
-
-        // Center X
         document.getElementById('seg-cx').oninput = (e) => {
             seg.cx = parseFloat(e.target.value);
             document.getElementById('seg-cx-val').textContent = (seg.cx * 100).toFixed(0) + '%';
             redraw();
         };
-
-        // Center Y
         document.getElementById('seg-cy').oninput = (e) => {
             seg.cy = parseFloat(e.target.value);
             document.getElementById('seg-cy-val').textContent = (seg.cy * 100).toFixed(0) + '%';
             redraw();
         };
-
-        // Ease In
         document.getElementById('seg-ease-in').oninput = (e) => {
             seg.easeIn = parseFloat(e.target.value);
             document.getElementById('seg-ease-in-val').textContent = seg.easeIn.toFixed(2) + 's';
             redraw();
         };
-
-        // Ease Out
         document.getElementById('seg-ease-out').oninput = (e) => {
             seg.easeOut = parseFloat(e.target.value);
             document.getElementById('seg-ease-out-val').textContent = seg.easeOut.toFixed(2) + 's';
             redraw();
         };
 
-        // Color palette
         const palette = document.getElementById('seg-color-palette');
         for (const color of ZoomEngine.COLORS) {
             const dot = document.createElement('div');
@@ -663,7 +692,6 @@ class ZoomCastApp {
             palette.appendChild(dot);
         }
 
-        // Action buttons
         document.getElementById('seg-btn-duplicate').onclick = () => this._duplicateSelectedZoom();
         document.getElementById('seg-btn-delete').onclick = () => this._deleteSelectedZoom();
     }
@@ -674,7 +702,13 @@ class ZoomCastApp {
             const video = document.getElementById('hidden-video');
             if (video && video.src) this._drawPreviewFrame(video);
         };
-        const controls = ['bg-color', 'bg-color2', 'bg-type', 'shadow-toggle', 'cursor-toggle', 'click-effects-toggle'];
+
+        const controls = [
+            'bg-color', 'bg-color2', 'bg-type', 'shadow-toggle', 'cursor-toggle',
+            'click-effects-toggle',
+            'screen-motion-blur', 'zoom-motion-blur', 'cursor-motion-blur',
+            'follow-cursor', 'auto-zoom-cursor',
+        ];
         controls.forEach(id => {
             const el = document.getElementById(id);
             if (el) el.addEventListener('change', update);
@@ -685,18 +719,32 @@ class ZoomCastApp {
             'corners-slider': 'corners-value',
             'shadow-slider': 'shadow-value',
             'cursor-size-slider': 'cursor-size-value',
+            'cursor-zoom-slider': 'cursor-zoom-value',
         };
         for (const [sliderId, valId] of Object.entries(rangeMap)) {
             const slider = document.getElementById(sliderId);
             if (!slider) continue;
             slider.oninput = () => {
-                const suffix = sliderId.includes('cursor') ? '×' : sliderId.includes('shadow') ? '%' : 'px';
+                const suffix = sliderId.includes('cursor-size') ? '×'
+                    : sliderId.includes('cursor-zoom') ? '×'
+                        : sliderId.includes('shadow') ? '%'
+                            : 'px';
                 document.getElementById(valId).textContent = slider.value + suffix;
                 update();
             };
         }
 
-        // Populate cursor style grid
+        // Speed buttons
+        ['cursor-speed', 'pan-speed'].forEach(group => {
+            document.querySelectorAll(`.speed-btn[data-group="${group}"]`).forEach(btn => {
+                btn.onclick = () => {
+                    document.querySelectorAll(`.speed-btn[data-group="${group}"]`).forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    update();
+                };
+            });
+        });
+
         this._initCursorStyleGrid();
     }
 
@@ -726,13 +774,17 @@ class ZoomCastApp {
                 this.cursorStyle = key;
                 grid.querySelectorAll('.cursor-style-card').forEach(c => c.classList.remove('selected'));
                 card.classList.add('selected');
-                // Refresh preview
                 const video = document.getElementById('hidden-video');
                 if (video && video.src) this._drawPreviewFrame(video);
             });
 
             grid.appendChild(card);
         }
+    }
+
+    _getSpeedValue(group) {
+        const active = document.querySelector(`.speed-btn[data-group="${group}"].active`);
+        return active ? active.dataset.speed : 'medium';
     }
 
     _getConfig() {
@@ -747,6 +799,17 @@ class ZoomCastApp {
             cursorSize: parseFloat(document.getElementById('cursor-size-slider')?.value || 1.2),
             cursorStyle: this.cursorStyle || 'style1',
             clickEffects: document.getElementById('click-effects-toggle')?.checked ?? true,
+            // Motion blur
+            screenMotionBlur: document.getElementById('screen-motion-blur')?.checked ?? false,
+            zoomMotionBlur: document.getElementById('zoom-motion-blur')?.checked ?? false,
+            cursorMotionBlur: document.getElementById('cursor-motion-blur')?.checked ?? false,
+            // Cursor follow
+            followCursor: document.getElementById('follow-cursor')?.checked ?? true,
+            autoZoomOnCursor: document.getElementById('auto-zoom-cursor')?.checked ?? false,
+            cursorZoomFactor: parseFloat(document.getElementById('cursor-zoom-slider')?.value || 2.0),
+            // Speed
+            cursorSpeed: this._getSpeedValue('cursor-speed'),
+            panSpeed: this._getSpeedValue('pan-speed'),
         };
     }
 
@@ -758,17 +821,16 @@ class ZoomCastApp {
     }
 
     _goToExport() {
-        // Set default path
         const now = new Date();
         const ts = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
         document.getElementById('export-path').value = `zoomcast_${ts}.mp4`;
 
-        // Set meta
         const meta = document.getElementById('export-meta');
         meta.innerHTML = `
       <span class="meta-chip">📹 ${this.duration.toFixed(1)}s</span>
       <span class="meta-chip">🎞️ ~${Math.round(this.duration * 30)} frames</span>
       <span class="meta-chip">🔍 ${this.segments.length} zoom segments</span>
+      <span class="meta-chip">✂️ ${this.cuts.length} cuts</span>
       <span class="meta-chip">🖱️ ${this.clickData.length} clicks</span>
     `;
 
@@ -797,7 +859,6 @@ class ZoomCastApp {
         document.getElementById('export-progress-section').classList.remove('hidden');
 
         try {
-            // Ask for save location
             let outputPath = document.getElementById('export-path').value;
             const result = await window.zoomcast.showSaveDialog({ defaultPath: outputPath });
             if (result.canceled) {
@@ -815,22 +876,31 @@ class ZoomCastApp {
             const fps = 30;
             const vw = video.videoWidth || 1920;
             const vh = video.videoHeight || 1080;
-            const totalFrames = Math.ceil(this.duration * fps);
 
-            // ── Off-screen canvas for rendering (no display, no DPR scaling) ──
+            // Build list of frame timestamps (excluding cut zones)
+            const allFrames = [];
+            const totalRawFrames = Math.ceil(this.duration * fps);
+            for (let fi = 0; fi < totalRawFrames; fi++) {
+                const t = fi / fps;
+                // Check if this time falls within a cut zone
+                const inCut = this.cuts.some(c => t >= c.tStart && t <= c.tEnd);
+                if (!inCut) allFrames.push(t);
+            }
+            const totalFrames = allFrames.length;
+
             const exportCanvas = document.createElement('canvas');
             exportCanvas.width = vw;
             exportCanvas.height = vh;
             const exportCtx = exportCanvas.getContext('2d', { willReadFrequently: true });
+            exportCtx.imageSmoothingEnabled = true;
+            exportCtx.imageSmoothingQuality = 'high';
 
-            // Build config for rendering at full resolution
             const config = this._getConfig();
             config.outWidth = vw;
             config.outHeight = vh;
             config.cursorData = this.cursorData;
             config.clickData = this.clickData;
 
-            // ── Spawn FFmpeg reading raw RGBA frames from stdin ──
             const streamStart = await window.zoomcast.startFFmpegStream({
                 outputPath,
                 width: vw,
@@ -848,29 +918,23 @@ class ZoomCastApp {
             const startTs = Date.now();
 
             for (let frameIdx = 0; frameIdx < totalFrames; frameIdx++) {
-                const t = frameIdx / fps;
+                const t = allFrames[frameIdx];
 
-                // Seek video to the exact timestamp
                 video.currentTime = t;
                 await new Promise(r => {
                     const done = () => { video.removeEventListener('seeked', done); r(); };
                     video.addEventListener('seeked', done);
-                    setTimeout(done, 200); // fallback so we never hang
+                    setTimeout(done, 200);
                 });
 
-                // Draw the processed frame (zoom effects, overlays, background, cursor, etc.)
                 ZoomEngine.renderFrame(exportCtx, video, t, this.segments, config);
 
-                // Read raw RGBA pixels — no PNG encoding, no base64, no disk touch
                 const imageData = exportCtx.getImageData(0, 0, vw, vh);
-
-                // Ship the raw buffer to main process → FFmpeg stdin
                 const writeResult = await window.zoomcast.writeFrame(imageData.data.buffer);
                 if (writeResult && !writeResult.ok) {
                     throw new Error('FFmpeg pipe write failed: ' + writeResult.error);
                 }
 
-                // Update progress bar
                 const done = frameIdx + 1;
                 const percent = Math.round((done / totalFrames) * 90) + 5;
                 const elapsed = (Date.now() - startTs) / 1000;
@@ -884,11 +948,9 @@ class ZoomCastApp {
                 pct.textContent = percent + '%';
                 text.textContent = `Encoding frame ${done}/${totalFrames} · ${rate.toFixed(1)} fps · ETA ${etaStr}`;
 
-                // Yield to the browser event loop so the UI stays responsive
                 if (done % 5 === 0) await new Promise(r => setTimeout(r, 0));
             }
 
-            // ── Close FFmpeg stdin and wait for it to finish ──
             fill.style.width = '96%';
             pct.textContent = '96%';
             text.textContent = 'Finalising video...';
@@ -902,17 +964,16 @@ class ZoomCastApp {
             pct.textContent = '100%';
             text.textContent = 'Complete!';
 
-            // Show completion section
             document.getElementById('export-complete').classList.remove('hidden');
             document.getElementById('export-complete-path').textContent = outputPath;
             document.getElementById('btn-open-folder').onclick = () => window.zoomcast.showInFolder(outputPath);
             document.getElementById('btn-new-recording').onclick = () => {
                 this._showScreen('home');
                 this.segments = [];
+                this.cuts = [];
             };
 
         } catch (err) {
-            // Make sure we clean up to avoid a zombie FFmpeg process
             try { await window.zoomcast.endFFmpegStream(); } catch (_) { /* ignore */ }
             fill.style.width = '0%';
             text.textContent = 'Export failed: ' + err.message;
