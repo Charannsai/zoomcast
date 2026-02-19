@@ -10,6 +10,7 @@ class Timeline {
         this.ctx = canvas.getContext('2d');
         this.duration = options.duration || 1;
         this.segments = options.segments || [];
+        this.cuts = options.cuts || [];
         this.playhead = 0;
         this.selectedSeg = null;
         this.thumbnails = [];
@@ -319,6 +320,9 @@ class Timeline {
             this._drawSegment(ctx, seg);
         }
 
+        // Cut zones (rendered on top of thumbnails and segments)
+        this._drawCutZones(ctx, W, H);
+
         // Snap guide lines (while dragging)
         if (this._drag && this._drag.seg) {
             this._drawSnapGuides(ctx);
@@ -424,6 +428,54 @@ class Timeline {
             ctx.textAlign = 'center';
             ctx.fillText(dur, x1 + w / 2, y1 - 5);
             ctx.textAlign = 'start';
+        }
+    }
+
+    /**
+     * Draw cut zones as hatched red overlays across the full timeline height.
+     */
+    _drawCutZones(ctx, W, H) {
+        if (!this.cuts || this.cuts.length === 0) return;
+
+        for (const cut of this.cuts) {
+            const x1 = this._tToX(cut.tStart);
+            const x2 = this._tToX(cut.tEnd);
+            const w = Math.max(x2 - x1, 2);
+
+            // Red translucent fill
+            ctx.fillStyle = 'rgba(232, 67, 147, 0.22)';
+            ctx.fillRect(x1, 0, w, H);
+
+            // Hatching pattern
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x1, 0, w, H);
+            ctx.clip();
+            ctx.strokeStyle = 'rgba(232, 67, 147, 0.35)';
+            ctx.lineWidth = 1;
+            const spacing = 6;
+            for (let i = -H; i < w + H; i += spacing) {
+                ctx.beginPath();
+                ctx.moveTo(x1 + i, 0);
+                ctx.lineTo(x1 + i + H, H);
+                ctx.stroke();
+            }
+            ctx.restore();
+
+            // Vertical border lines
+            ctx.fillStyle = 'rgba(232, 67, 147, 0.8)';
+            ctx.fillRect(x1, 0, 2, H);
+            ctx.fillRect(x2 - 2, 0, 2, H);
+
+            // Scissors icon text
+            if (w > 14) {
+                ctx.font = '12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('✂', x1 + w / 2, H / 2);
+                ctx.textAlign = 'start';
+                ctx.textBaseline = 'alphabetic';
+            }
         }
     }
 

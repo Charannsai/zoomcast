@@ -273,6 +273,7 @@ button:not(:disabled),
 .gradient-text {
   background: linear-gradient(135deg, #6C5CE7, #a29bfe, #00CEC9);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
@@ -764,6 +765,7 @@ button:not(:disabled),
   font-size: 11px;
   outline: none;
   -webkit-appearance: none;
+  appearance: none;
 }
 .prop-select option { background: var(--bg-3); }
 
@@ -862,6 +864,7 @@ button:not(:disabled),
   font-size: 11px;
   outline: none;
   -moz-appearance: textfield;
+  appearance: textfield;
 }
 .seg-time-input::-webkit-inner-spin-button,
 .seg-time-input::-webkit-outer-spin-button { opacity: 0.3; }
