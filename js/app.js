@@ -137,8 +137,7 @@ class ZoomCastApp {
                         chromeMediaSource: 'desktop',
                         chromeMediaSourceId: this.selectedSource.id,
                         cursor: 'never',
-                    },
-                    cursor: 'never',
+                    }
                 }
             });
 
