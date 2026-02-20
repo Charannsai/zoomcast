@@ -19,8 +19,6 @@ let isRecording = false;
 // Python cursor tracker process
 let cursorTracker = null;
 
-// Transparent cursor-hiding overlay window (shown during recording)
-let cursorHideOverlay = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -156,10 +154,6 @@ ipcMain.handle('start-tracking', (event, payload) => {
 
     cursorData.push({ t, x: cx, y: cy, rx: point.x, ry: point.y });
   }, 8); // 120fps tracking for accurate cursor path
-
-  // Show transparent cursor-hiding overlay over the recording display
-  showCursorHideOverlay(displayBounds);
-
   // Start Python click tracker
   startClickTracker(displayBounds);
 
@@ -170,8 +164,6 @@ ipcMain.handle('start-tracking', (event, payload) => {
 ipcMain.handle('stop-tracking', () => {
   isRecording = false;
   stopCursorTracking();
-  // Remove the cursor-hiding overlay so UI returns to normal
-  hideCursorHideOverlay();
   const result = { cursor: cursorData, clicks: clickData };
   return result;
 });
@@ -386,71 +378,6 @@ ipcMain.handle('cleanup-temp', async (event, dirPath) => {
   }
 });
 
-// ─── Cursor Hide Overlay ────────────────────────────────────────
-
-/**
- * Creates a transparent, always-on-top, click-through window covering the
- * recording display. Its job: apply `cursor: none` CSS so the OS cursor
- * becomes invisible in the captured screen stream.
- *
- * We use BOTH `cursor:none` AND a 1×1 transparent cursor data-URL as
- * fallback — some Windows configurations ignore `cursor:none` at the
- * compositor level but honour a custom cursor image.
- */
-function showCursorHideOverlay(displayBounds) {
-  if (cursorHideOverlay && !cursorHideOverlay.isDestroyed()) return;
-
-  const bounds = displayBounds || { x: 0, y: 0, width: 1920, height: 1080 };
-
-  cursorHideOverlay = new BrowserWindow({
-    x: bounds.x,
-    y: bounds.y,
-    width: bounds.width,
-    height: bounds.height,
-    transparent: true,
-    frame: false,
-    hasShadow: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    focusable: false,
-    show: false,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-    },
-  });
-
-  // 1×1 transparent cursor as a data-URL (fallback for systems that ignore `cursor:none`)
-  const blankCur = 'url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=) 0 0, none';
-
-  const html = `data:text/html,<!DOCTYPE html><html><head><style>
-    *,*::before,*::after,body,html{
-      margin:0;padding:0;
-      background:transparent;
-      cursor:${encodeURIComponent(blankCur)}!important;
-      pointer-events:none;
-    }
-  </style></head><body></body></html>`;
-
-  cursorHideOverlay.loadURL(html);
-
-  cursorHideOverlay.once('ready-to-show', () => {
-    if (cursorHideOverlay && !cursorHideOverlay.isDestroyed()) {
-      cursorHideOverlay.setIgnoreMouseEvents(true, { forward: true });
-      cursorHideOverlay.setAlwaysOnTop(true, 'screen-saver', 1);
-      cursorHideOverlay.showInactive();  // showInactive avoids stealing focus
-    }
-  });
-
-  cursorHideOverlay.on('closed', () => { cursorHideOverlay = null; });
-}
-
-function hideCursorHideOverlay() {
-  if (cursorHideOverlay && !cursorHideOverlay.isDestroyed()) {
-    cursorHideOverlay.close();
-    cursorHideOverlay = null;
-  }
-}
 
 // ─── Cursor / Click Tracking ────────────────────────────────────
 
