@@ -137,7 +137,7 @@ ipcMain.handle('start-tracking', (event, payload) => {
   const sw = bw;
   const sh = bh;
 
-  // Poll cursor position at 60Hz for smooth, accurate tracking
+  // Poll cursor position at 120Hz for ultra-smooth, accurate tracking
   cursorInterval = setInterval(() => {
     if (!isRecording) return;
     const point = screen.getCursorScreenPoint();
@@ -155,7 +155,7 @@ ipcMain.handle('start-tracking', (event, payload) => {
     const cy = Math.max(0, Math.min(1, ny));
 
     cursorData.push({ t, x: cx, y: cy, rx: point.x, ry: point.y });
-  }, 16); // ~60fps tracking for accurate cursor path
+  }, 8); // 120fps tracking for accurate cursor path
 
   // Show transparent cursor-hiding overlay over the recording display
   showCursorHideOverlay(displayBounds);
