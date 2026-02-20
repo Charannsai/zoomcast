@@ -334,12 +334,17 @@ class ZoomEngine {
         ctx.restore(); // End clip region
 
         // ── 8. Cursor — drawn AFTER restore(), in pure screen space ──
-        // CRITICAL: We draw the custom cursor at the EXACT RAW position (no lag)
-        // so it perfectly overlays the baked-in OS cursor. We multiply cursorSize
-        // by the zoom factor so it expands physically to cover the zoomed OS cursor.
+        // CRITICAL: We draw the custom cursor with latency compensation.
+        // Electron's WebRTC desktop capture loop introduces ~40-60ms of video latency 
+        // compared to the instantaneous hardware cursor polling in main.js.
+        // By shifting the timeline backwards by 50ms, the raw cursor data perfectly locks 
+        // onto the baked-in OS cursor's position, completely covering it during fast movements.
         if (cursorData && cursorData.length > 0) {
-            // Use exact raw position for perfect occlusion, no lag
-            const rawCursor = this._interpolateCursor(t, cursorData);
+            // APPLY LATENCY COMPENSATION
+            const VIDEO_LATENCY_DELAY = 0.050; // 50ms
+            const syncT = Math.max(0, t - VIDEO_LATENCY_DELAY);
+
+            const rawCursor = this._interpolateCursor(syncT, cursorData);
             if (rawCursor) {
                 const pos = this._mapToScreen(rawCursor.x, rawCursor.y, factor, cx, cy, screenX, screenY, screenW, screenH);
                 if (pos) {
