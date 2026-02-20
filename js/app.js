@@ -179,7 +179,10 @@ class ZoomCastApp {
             this.isPaused = false;
             this.recStartTime = Date.now();
 
-            await window.zoomcast.startTracking(this.displayBounds);
+            await window.zoomcast.startTracking({
+                bounds: this.displayBounds,
+                scaleFactor: this.displayScaleFactor,
+            });
 
             document.getElementById('recording-overlay').classList.remove('hidden');
             this.timerInterval = setInterval(() => this._updateTimer(), 50);

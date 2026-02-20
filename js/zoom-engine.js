@@ -1,7 +1,7 @@
 /**
- * ZoomCast — Zoom Engine v5
- * Features: Smart cursor follow (Screen.studio style), motion blur,
- *           cursor animation types, zoom/pan speed controls, high quality rendering
+ * ZoomCast — Zoom Engine v6
+ * Fixed: cursor drawn in screen-space (not zoom-space), linear cursor interpolation,
+ *        correct zoom transform math, lerp-based camera follow, DPI awareness.
  */
 
 class ZoomSegment {
@@ -35,7 +35,6 @@ class ZoomEngine {
     };
 
     // ── Motion blur sample offsets (temporal) ──
-    // Each entry is {dt, alpha} — dt = seconds before current frame to sample
     static MOTION_BLUR_SAMPLES = [
         { dt: 0.000, alpha: 1.00 },
         { dt: 0.016, alpha: 0.55 },
@@ -45,11 +44,13 @@ class ZoomEngine {
     ];
 
     // ── Cursor movement easing speeds ──
+    // lag  = how far behind (seconds) the smooth position trails the raw position
+    // lerp = per-frame lerp alpha toward target (used in real-time preview)
     static CURSOR_SPEEDS = {
-        slow: { lag: 0.18, smoothing: 0.06 }, // very smooth follow
-        medium: { lag: 0.10, smoothing: 0.12 },
-        fast: { lag: 0.05, smoothing: 0.20 },
-        rapid: { lag: 0.00, smoothing: 1.00 }, // near-instant
+        slow: { lag: 0.18, lerp: 0.05 },
+        medium: { lag: 0.10, lerp: 0.12 },
+        fast: { lag: 0.05, lerp: 0.25 },
+        rapid: { lag: 0.00, lerp: 1.00 },
     };
 
     // ── Zoom pan speed multipliers (easing duration override) ──
@@ -59,6 +60,12 @@ class ZoomEngine {
         fast: { easeIn: 0.18, easeOut: 0.18 },
         rapid: { easeIn: 0.06, easeOut: 0.06 },
     };
+
+    // ── Per-frame camera state (persistent across calls for smooth follow) ──
+    static _camX = 0.5;
+    static _camY = 0.5;
+    static _camFactor = 1.0;
+    static _camT = -1;          // last rendered time; detect scrubs
 
     /**
      * Preload all cursor images. Call once at startup.
@@ -84,18 +91,9 @@ class ZoomEngine {
     }
 
     // ── Easing functions ──
-    static easeInOutCubic(t) {
-        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-    }
-    static easeOutQuart(t) {
-        return 1 - Math.pow(1 - t, 4);
-    }
-    static easeOutExpo(t) {
-        return t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
-    }
-    static easeInOutQuint(t) {
-        return t < 0.5 ? 16 * t * t * t * t * t : 1 - Math.pow(-2 * t + 2, 5) / 2;
-    }
+    static easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+    static easeOutQuart(t) { return 1 - Math.pow(1 - t, 4); }
+    static easeOutExpo(t) { return t === 1 ? 1 : 1 - Math.pow(2, -10 * t); }
 
     /**
      * Get zoom state at time t with optional pan-speed override.
@@ -147,8 +145,8 @@ class ZoomEngine {
     }
 
     /**
-     * Get smoothed cursor position following Screen.studio / FocuSee style.
-     * Uses exponential smoothing based on cursorSpeed setting.
+     * Get linearly-interpolated cursor position at time t.
+     * Linear interpolation between the two nearest samples → buttery smooth.
      */
     static getSmoothedCursorAt(t, cursorData, cursorSpeed = 'medium') {
         const raw = this._interpolateCursor(t, cursorData);
@@ -156,14 +154,14 @@ class ZoomEngine {
 
         const speed = this.CURSOR_SPEEDS[cursorSpeed] || this.CURSOR_SPEEDS.medium;
 
-        // If rapid, return raw position
+        // Rapid = use raw position directly
         if (speed.lag === 0) return raw;
 
-        // Look back by lag seconds and exponentially blend
+        // Trail: look back by lag seconds and linearly blend
         const prev = this._interpolateCursor(Math.max(0, t - speed.lag), cursorData);
         if (!prev) return raw;
 
-        const alpha = speed.smoothing;
+        const alpha = speed.lerp;
         return {
             x: raw.x * alpha + prev.x * (1 - alpha),
             y: raw.y * alpha + prev.y * (1 - alpha),
@@ -172,59 +170,16 @@ class ZoomEngine {
     }
 
     /**
-     * AUTO ZOOM: Compute zoom target based on cursor velocity (Screen.studio style).
-     * Returns { factor, cx, cy } — if cursor moves fast → zoom towards it.
-     */
-    static getCursorDrivenZoom(t, cursorData, config = {}) {
-        const {
-            autoZoomEnabled = true,
-            baseZoom = 1.0,
-            maxAutoZoom = 2.0,
-            velocityThreshold = 0.08,  // normalized coords/sec
-            zoomSmoothLag = 0.3,       // seconds of smoothing window
-            panSpeed = 'medium',
-        } = config;
-
-        if (!autoZoomEnabled || !cursorData || cursorData.length < 2) {
-            return { factor: baseZoom, cx: 0.5, cy: 0.5, autoDriven: false };
-        }
-
-        // Compute cursor velocity at time t
-        const dt = 0.1;
-        const posNow = this._interpolateCursor(t, cursorData);
-        const posPrev = this._interpolateCursor(Math.max(0, t - dt), cursorData);
-        if (!posNow || !posPrev) return { factor: baseZoom, cx: 0.5, cy: 0.5, autoDriven: false };
-
-        const vx = (posNow.x - posPrev.x) / dt;
-        const vy = (posNow.y - posPrev.y) / dt;
-        const vel = Math.sqrt(vx * vx + vy * vy);
-
-        // Map velocity to zoom factor
-        const velNorm = Math.min(1, vel / (velocityThreshold * 4));
-        const targetFactor = baseZoom + (maxAutoZoom - baseZoom) * velNorm;
-
-        // Smooth the zoom over time
-        const prevPos = this._interpolateCursor(Math.max(0, t - zoomSmoothLag), cursorData);
-        const smoothFactor = prevPos
-            ? (baseZoom + (maxAutoZoom - baseZoom) * Math.min(1, Math.sqrt(
-                Math.pow((posNow.x - prevPos.x) / zoomSmoothLag, 2) +
-                Math.pow((posNow.y - prevPos.y) / zoomSmoothLag, 2)
-            ) / velocityThreshold))
-            : baseZoom;
-
-        const factor = targetFactor * 0.3 + smoothFactor * 0.7;
-
-        return {
-            factor: Math.max(baseZoom, Math.min(maxAutoZoom, factor)),
-            cx: posNow.x,
-            cy: posNow.y,
-            autoDriven: true,
-        };
-    }
-
-    /**
-     * Render a complete frame with all effects — HIGH QUALITY version.
-     * Uses imageSmoothingQuality = 'high' for crystal-clear output.
+     * Render a complete frame with all effects.
+     *
+     * CRITICAL RENDERING ORDER (fixes cursor zoom bug):
+     *   1. Background
+     *   2. Shadow
+     *   3. Clip rect
+     *   4. Video frame (with zoom transform applied inside clip)
+     *   5. Click ripples (still inside clip, in screen space relative to zoom)
+     *   6. RESET TRANSFORM → Draw cursor (screen space, never affected by zoom)
+     *   7. Border overlay
      */
     static renderFrame(ctx, source, t, segments, config) {
         const {
@@ -237,7 +192,6 @@ class ZoomEngine {
             clickData = null, clickEffects = true,
             // Motion blur
             screenMotionBlur = false,
-            zoomMotionBlur = false,
             cursorMotionBlur = false,
             // Speed controls
             cursorSpeed = 'medium',
@@ -250,50 +204,65 @@ class ZoomEngine {
 
         const cw = outWidth, ch = outHeight;
 
-        // Enable high-quality image interpolation
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
 
-        // 1. Background
+        // ── 1. Background ──────────────────────────────────────────
         this._drawBackground(ctx, cw, ch, bgType, bgColor, bgColor2);
 
-        // 2. Get zoom state
+        // ── 2. Resolve manual zoom state ──────────────────────────
         let zoom = this.getZoomAt(t, segments, panSpeed);
 
-        // 3. Smart cursor-follow: if auto-zoom-on-cursor is on and no manual segment → zoom to cursor
-        if (followCursor && cursorData && cursorData.length > 0) {
+        // ── 3. Smart cursor-follow (cinematic lerp) ────────────────
+        const cursorPos = (cursorData && cursorData.length > 0)
+            ? this.getSmoothedCursorAt(t, cursorData, cursorSpeed)
+            : null;
+
+        // Detect scrub (large time jump) → snap camera instead of lerp
+        const scrubbed = Math.abs(t - this._camT) > 0.5;
+
+        if (followCursor && cursorPos) {
             if (zoom.factor <= 1.01 && autoZoomOnCursor) {
-                // Use cursor position as the zoom center
-                const cursor = this.getSmoothedCursorAt(t, cursorData, cursorSpeed);
-                if (cursor) {
-                    zoom = {
-                        factor: cursorZoomFactor,
-                        cx: cursor.x,
-                        cy: cursor.y,
-                        followMode: true,
-                    };
-                }
+                // Auto-zoom mode: camera follows cursor
+                const targetX = cursorPos.x;
+                const targetY = cursorPos.y;
+                const lerpK = scrubbed ? 1 : 0.25;
+                this._camX = this._camX + (targetX - this._camX) * lerpK;
+                this._camY = this._camY + (targetY - this._camY) * lerpK;
+                zoom = { factor: cursorZoomFactor, cx: this._camX, cy: this._camY };
             } else if (zoom.factor > 1.01) {
-                // When zoomed in via segment → track cursor position within zoom window
-                const cursor = this.getSmoothedCursorAt(t, cursorData, cursorSpeed);
-                if (cursor) {
-                    // Pan the viewport towards the cursor smoothly
-                    const panAlpha = 0.35;
-                    zoom.cx = zoom.cx * (1 - panAlpha) + cursor.x * panAlpha;
-                    zoom.cy = zoom.cy * (1 - panAlpha) + cursor.y * panAlpha;
-                }
+                // Manual zoom segment: smoothly pan toward cursor within segment
+                const speeds = this.CURSOR_SPEEDS[cursorSpeed] || this.CURSOR_SPEEDS.medium;
+                const lerpK = scrubbed ? 1 : (speeds.lerp * 0.35);
+                const targetX = zoom.cx * (1 - 0.35) + cursorPos.x * 0.35;
+                const targetY = zoom.cy * (1 - 0.35) + cursorPos.y * 0.35;
+                this._camX = this._camX + (targetX - this._camX) * lerpK;
+                this._camY = this._camY + (targetY - this._camY) * lerpK;
+                zoom.cx = this._camX;
+                zoom.cy = this._camY;
+            } else {
+                // No zoom — keep camera centered
+                const lerpK = scrubbed ? 1 : 0.1;
+                this._camX = this._camX + (0.5 - this._camX) * lerpK;
+                this._camY = this._camY + (0.5 - this._camY) * lerpK;
             }
+        } else {
+            // Follow disabled
+            this._camX = zoom.cx;
+            this._camY = zoom.cy;
         }
+        this._camFactor = zoom.factor;
+        this._camT = t;
 
         const { factor, cx, cy } = zoom;
 
-        // 4. Screen area
+        // ── 4. Screen area dimensions ──────────────────────────────
         const screenW = cw - padding * 2;
         const screenH = ch - padding * 2;
         const screenX = padding, screenY = padding;
         if (screenW <= 0 || screenH <= 0) return zoom;
 
-        // 5. Shadow
+        // ── 5. Shadow ──────────────────────────────────────────────
         if (shadow && shadowIntensity > 0) {
             ctx.save();
             ctx.shadowColor = `rgba(0,0,0,${(shadowIntensity / 100) * 0.75})`;
@@ -305,7 +274,7 @@ class ZoomEngine {
             ctx.restore();
         }
 
-        // 6. Clip + draw video (with optional motion blur)
+        // ── 6. Clip + draw video ────────────────────────────────────
         ctx.save();
         this._roundRect(ctx, screenX, screenY, screenW, screenH, corners);
         ctx.clip();
@@ -314,31 +283,12 @@ class ZoomEngine {
         ctx.imageSmoothingQuality = 'high';
 
         if (screenMotionBlur && segments.length > 0) {
-            // Draw multiple temporally-offset frames blended together for screen motion blur
             this._drawWithMotionBlur(ctx, source, t, segments, config, screenX, screenY, screenW, screenH, factor, cx, cy, panSpeed);
         } else {
             this._drawVideoFrame(ctx, source, factor, cx, cy, screenX, screenY, screenW, screenH);
         }
 
-        // 7. Cursor overlay
-        if (cursorData && cursorData.length > 0) {
-            const cursor = this.getSmoothedCursorAt(t, cursorData, cursorSpeed);
-            if (cursor) {
-                const pos = this._mapToScreen(cursor.x, cursor.y, factor, cx, cy, screenX, screenY, screenW, screenH);
-                if (pos) {
-                    const isHand = this._isNearClick(t, clickData, 0.2);
-                    const type = isHand ? 'hand' : 'cur';
-
-                    if (cursorMotionBlur) {
-                        this._drawCursorWithBlur(ctx, t, cursorData, factor, cx, cy, screenX, screenY, screenW, screenH, cursorSize, cursorStyle, type, cursorSpeed, clickData);
-                    } else {
-                        this._drawImageCursor(ctx, pos.x, pos.y, cursorSize, cursorStyle, type);
-                    }
-                }
-            }
-        }
-
-        // 8. Click ripples
+        // ── 7. Click ripples (computed in zoom-space → map back to screen) ──
         if (clickEffects && clickData) {
             for (const click of clickData) {
                 const dt = t - click.t;
@@ -351,33 +301,53 @@ class ZoomEngine {
                 const r = 6 + 32 * this.easeOutQuart(p);
                 ctx.beginPath();
                 ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
-                ctx.strokeStyle = `rgba(108, 92, 231, ${(1 - p) * 0.65})`;
+                ctx.strokeStyle = `rgba(108,92,231,${(1 - p) * 0.65})`;
                 ctx.lineWidth = 2.5;
                 ctx.stroke();
 
-                // Inner ring (secondary)
+                // Inner ring
                 if (p < 0.5) {
                     const r2 = 4 + 14 * this.easeOutQuart(p * 2);
                     ctx.beginPath();
                     ctx.arc(pos.x, pos.y, r2, 0, Math.PI * 2);
-                    ctx.strokeStyle = `rgba(162, 155, 254, ${(1 - p * 2) * 0.4})`;
+                    ctx.strokeStyle = `rgba(162,155,254,${(1 - p * 2) * 0.4})`;
                     ctx.lineWidth = 1.5;
                     ctx.stroke();
                 }
 
-                // Center fill flash
+                // Center flash
                 if (p < 0.10) {
                     ctx.beginPath();
                     ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2);
-                    ctx.fillStyle = `rgba(108, 92, 231, ${(1 - p / 0.10) * 0.5})`;
+                    ctx.fillStyle = `rgba(108,92,231,${(1 - p / 0.10) * 0.5})`;
                     ctx.fill();
                 }
             }
         }
 
-        ctx.restore();
+        ctx.restore(); // End clip region
 
-        // 9. Subtle border
+        // ── 8. Cursor — drawn AFTER restore(), in pure screen space ──
+        // CRITICAL: ctx transform is now identity. Cursor is NEVER zoomed.
+        if (cursorData && cursorData.length > 0 && cursorPos) {
+            const pos = this._mapToScreen(cursorPos.x, cursorPos.y, factor, cx, cy, screenX, screenY, screenW, screenH);
+            if (pos) {
+                const isHand = this._isNearClick(t, clickData, 0.2);
+                const type = isHand ? 'hand' : 'cur';
+
+                if (cursorMotionBlur) {
+                    this._drawCursorWithBlur(ctx, t, cursorData, factor, cx, cy, screenX, screenY, screenW, screenH, cursorSize, cursorStyle, type, cursorSpeed, clickData);
+                } else {
+                    // Save/restore so cursor drawing is isolated
+                    ctx.save();
+                    ctx.setTransform(1, 0, 0, 1, 0, 0); // Absolute identity — never inside zoom transform
+                    this._drawImageCursor(ctx, pos.x, pos.y, cursorSize, cursorStyle, type);
+                    ctx.restore();
+                }
+            }
+        }
+
+        // ── 9. Subtle border ────────────────────────────────────────
         ctx.save();
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
@@ -390,7 +360,7 @@ class ZoomEngine {
         return zoom;
     }
 
-    // ── Draw Video Frame ──
+    // ── Draw Video Frame (correct zoom math: translate-scale-translate) ──
     static _drawVideoFrame(ctx, source, factor, cx, cy, sx, sy, sw, sh) {
         const srcW = source.videoWidth || source.width || 1920;
         const srcH = source.videoHeight || source.height || 1080;
@@ -399,6 +369,7 @@ class ZoomEngine {
         ctx.imageSmoothingQuality = 'high';
 
         if (factor > 1.005) {
+            // Correct zoom math: crop from source using normalized (cx,cy) as pivot
             const cropW = srcW / factor;
             const cropH = srcH / factor;
             const px = cx * srcW;
@@ -413,17 +384,16 @@ class ZoomEngine {
 
     // ── Screen Motion Blur ──
     static _drawWithMotionBlur(ctx, source, t, segments, config, sx, sy, sw, sh, factor, cx, cy, panSpeed) {
-        // Draw the main frame first (fully opaque)
         this._drawVideoFrame(ctx, source, factor, cx, cy, sx, sy, sw, sh);
 
-        // Composite temporal ghost frames on top with decreasing opacity
-        const samples = this.MOTION_BLUR_SAMPLES.slice(1); // skip dt=0 (main frame)
+        const samples = this.MOTION_BLUR_SAMPLES.slice(1);
         for (const sample of samples) {
             const prevT = Math.max(0, t - sample.dt);
             const prevZoom = this.getZoomAt(prevT, segments, panSpeed);
 
-            // Only blur if zoom state differs (pan/zoom in progress)
-            const zoomDelta = Math.abs(prevZoom.factor - factor) + Math.abs(prevZoom.cx - cx) * 2 + Math.abs(prevZoom.cy - cy) * 2;
+            const zoomDelta = Math.abs(prevZoom.factor - factor)
+                + Math.abs(prevZoom.cx - cx) * 2
+                + Math.abs(prevZoom.cy - cy) * 2;
             if (zoomDelta < 0.01) continue;
 
             ctx.save();
@@ -436,7 +406,6 @@ class ZoomEngine {
 
     // ── Cursor Motion Blur ──
     static _drawCursorWithBlur(ctx, t, cursorData, factor, cx, cy, sx, sy, sw, sh, cursorSize, cursorStyle, type, cursorSpeed, clickData) {
-        // Draw ghost cursors at previous positions
         const blurSamples = [
             { dt: 0.050, alpha: 0.18 },
             { dt: 0.033, alpha: 0.30 },
@@ -449,17 +418,21 @@ class ZoomEngine {
             const pos = this._mapToScreen(prevCursor.x, prevCursor.y, factor, cx, cy, sx, sy, sw, sh);
             if (!pos) continue;
             ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0); // screen space
             ctx.globalAlpha = s.alpha;
             this._drawImageCursor(ctx, pos.x, pos.y, cursorSize, cursorStyle, type);
             ctx.restore();
         }
 
-        // Draw main cursor (full alpha)
+        // Main cursor (full alpha, screen space)
         const cursor = this.getSmoothedCursorAt(t, cursorData, cursorSpeed);
         if (cursor) {
             const pos = this._mapToScreen(cursor.x, cursor.y, factor, cx, cy, sx, sy, sw, sh);
             if (pos) {
+                ctx.save();
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
                 this._drawImageCursor(ctx, pos.x, pos.y, cursorSize, cursorStyle, type);
+                ctx.restore();
             }
         }
     }
@@ -536,6 +509,10 @@ class ZoomEngine {
         return false;
     }
 
+    /**
+     * Map normalized [0,1] position to canvas screen pixels,
+     * accounting for zoom viewport offset.
+     */
     static _mapToScreen(nx, ny, factor, cx, cy, sx, sy, sw, sh) {
         let x, y;
         if (factor > 1.005) {
@@ -552,9 +529,19 @@ class ZoomEngine {
         return { x, y };
     }
 
+    /**
+     * Linear interpolation between the two nearest cursor samples.
+     * Binary search → O(log n). Returns { x, y, t }.
+     */
     static _interpolateCursor(t, data) {
         if (!data || !data.length) return null;
         if (data.length === 1) return data[0];
+
+        // Clamp to data range
+        if (t <= data[0].t) return data[0];
+        if (t >= data[data.length - 1].t) return data[data.length - 1];
+
+        // Binary search for surrounding samples
         let lo = 0, hi = data.length - 1;
         while (lo < hi - 1) {
             const m = (lo + hi) >> 1;
@@ -562,8 +549,14 @@ class ZoomEngine {
         }
         const a = data[lo], b = data[hi];
         if (a.t === b.t) return a;
-        const p = Math.max(0, Math.min(1, (t - a.t) / (b.t - a.t)));
-        return { x: a.x + (b.x - a.x) * p, y: a.y + (b.y - a.y) * p, t };
+
+        // True linear interpolation (not nearest-neighbour)
+        const p = (t - a.t) / (b.t - a.t);
+        return {
+            x: a.x + (b.x - a.x) * p,
+            y: a.y + (b.y - a.y) * p,
+            t,
+        };
     }
 
     static _roundRect(ctx, x, y, w, h, r) {

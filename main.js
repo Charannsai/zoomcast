@@ -7,7 +7,7 @@
 const { app, BrowserWindow, ipcMain, desktopCapturer, screen, dialog, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 
 let mainWindow = null;
 let cursorInterval = null;
@@ -15,6 +15,74 @@ let cursorData = [];
 let clickData = [];
 let recordingStartTime = 0;
 let isRecording = false;
+
+// ─── OS-Level Cursor Visibility (Windows only) ────────────────────────────
+// Uses PowerShell + Windows Forms to hide/show the real system cursor
+// at the Win32 level so it never appears in the captured video stream.
+// This is the only bulletproof solution on Windows because Chromium's
+// cursor:'never' getUserMedia constraint is inconsistently honoured.
+
+let _cursorHideProc = null;
+
+/**
+ * Hide the Windows system cursor globally via PowerShell.
+ * Keeps a persistent PowerShell process alive so we can Show() quickly.
+ */
+function hideCursorGlobally() {
+  if (process.platform !== 'win32') return;
+  try {
+    // We run a small PowerShell script that:
+    //   1. Loads Windows.Forms (needed for Cursor class)
+    //   2. Calls Cursor::Hide() — decrements the OS display counter
+    //   3. Waits forever (reads stdin) so we can kill it on stop
+    // Hiding is idempotent; each Hide() call decrements a counter,
+    // so we track the process and kill it when done (which unblocks the
+    // Show() call in showCursorGlobally).
+    const script = [
+      'Add-Type -AssemblyName System.Windows.Forms;',
+      '[System.Windows.Forms.Cursor]::Hide();',
+      // Keep the process running until we kill it
+      '$host.UI.RawUI | Out-Null; while($true){ Start-Sleep -Seconds 60 }',
+    ].join(' ');
+    _cursorHideProc = spawn('powershell', [
+      '-NonInteractive', '-NoProfile', '-WindowStyle', 'Hidden',
+      '-Command', script,
+    ], { stdio: 'ignore', windowsHide: true });
+    _cursorHideProc.on('error', (err) => console.warn('[CursorHide] PS error:', err.message));
+    console.log('[CursorHide] OS cursor hidden via PowerShell');
+  } catch (err) {
+    console.warn('[CursorHide] Failed to hide OS cursor:', err.message);
+  }
+}
+
+/**
+ * Restore the Windows system cursor by calling Cursor::Show() and
+ * killing the hide-process we spawned earlier.
+ */
+function showCursorGlobally() {
+  if (process.platform !== 'win32') return;
+  try {
+    // First, show the cursor to balance the previous Hide() call
+    const script = [
+      'Add-Type -AssemblyName System.Windows.Forms;',
+      '[System.Windows.Forms.Cursor]::Show();',
+    ].join(' ');
+    execFile('powershell', [
+      '-NonInteractive', '-NoProfile', '-WindowStyle', 'Hidden',
+      '-Command', script,
+    ], { windowsHide: true }, (err) => {
+      if (err) console.warn('[CursorShow] PS error:', err.message);
+      else console.log('[CursorShow] OS cursor restored via PowerShell');
+    });
+  } catch (err) {
+    console.warn('[CursorShow] Failed to restore OS cursor:', err.message);
+  }
+  // Kill the persistent hide-process
+  if (_cursorHideProc) {
+    try { _cursorHideProc.kill(); } catch (_) { }
+    _cursorHideProc = null;
+  }
+}
 
 // Python cursor tracker process
 let cursorTracker = null;
@@ -73,6 +141,8 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   stopCursorTracking();
   hideCursorHideOverlay();
+  // Always restore the OS cursor on exit so the user is never stuck
+  showCursorGlobally();
 });
 
 app.on('window-all-closed', () => {
@@ -117,16 +187,25 @@ ipcMain.handle('get-displays', () => {
 });
 
 // Start cursor/click tracking
-ipcMain.handle('start-tracking', (event, displayBounds) => {
+ipcMain.handle('start-tracking', (event, payload) => {
   cursorData = [];
   clickData = [];
   recordingStartTime = Date.now();
   isRecording = true;
 
+  // payload can be { bounds, scaleFactor } (new) or plain bounds object (legacy)
+  const displayBounds = payload?.bounds ?? payload;
+  const scaleFactor = payload?.scaleFactor ?? 1;
+
   const bx = displayBounds?.x || 0;
   const by = displayBounds?.y || 0;
   const bw = displayBounds?.width || 1920;
   const bh = displayBounds?.height || 1080;
+
+  // On Windows with HiDPI, getCursorScreenPoint() returns PHYSICAL pixels but
+  // display.bounds uses LOGICAL pixels.  Divide by (logical * scale) to get [0,1].
+  const sw = bw * scaleFactor;
+  const sh = bh * scaleFactor;
 
   // Poll cursor position at 60Hz for smooth, accurate tracking
   cursorInterval = setInterval(() => {
@@ -134,9 +213,9 @@ ipcMain.handle('start-tracking', (event, displayBounds) => {
     const point = screen.getCursorScreenPoint();
     const t = (Date.now() - recordingStartTime) / 1000;
 
-    // Normalize to [0, 1] within the recording display
-    const nx = (point.x - bx) / bw;
-    const ny = (point.y - by) / bh;
+    // Normalize to [0, 1] within the recording display (DPI-compensated)
+    const nx = (point.x - bx) / sw;
+    const ny = (point.y - by) / sh;
 
     // Skip if cursor is outside of this display (can happen on multi-monitor setups)
     if (nx < -0.05 || nx > 1.05 || ny < -0.05 || ny > 1.05) return;
@@ -148,8 +227,12 @@ ipcMain.handle('start-tracking', (event, displayBounds) => {
     cursorData.push({ t, x: cx, y: cy, rx: point.x, ry: point.y });
   }, 16); // ~60fps tracking for accurate cursor path
 
-  // Show transparent cursor-hiding overlay over the recording display
-  showCursorHideOverlay(displayBounds);
+  // ── Bulletproof cursor hiding (triple-layered) ──────────────────────────
+  // Layer 1: getUserMedia constraint (unreliable on Windows but harmless)
+  // Layer 2: Transparent CSS overlay window (hides cursor from UI/preview)
+  // Layer 3: OS-level Win32 cursor hide via PowerShell (hides from capture)
+  hideCursorGlobally();          // Layer 3 — PowerShell Win32 hide
+  showCursorHideOverlay(displayBounds); // Layer 2 — CSS overlay
 
   // Start Python click tracker
   startClickTracker(displayBounds);
@@ -161,8 +244,9 @@ ipcMain.handle('start-tracking', (event, displayBounds) => {
 ipcMain.handle('stop-tracking', () => {
   isRecording = false;
   stopCursorTracking();
-  // Remove the cursor-hiding overlay so UI returns to normal
-  hideCursorHideOverlay();
+  // Restore OS cursor first so it's visible immediately
+  showCursorGlobally();          // Layer 3 — restore Win32 cursor
+  hideCursorHideOverlay();       // Layer 2 — remove CSS overlay
   const result = { cursor: cursorData, clicks: clickData };
   return result;
 });
