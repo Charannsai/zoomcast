@@ -322,7 +322,7 @@ class ZoomCastApp {
         meta.textContent = `${Math.round(this.duration * 30)} frames · ${this.duration.toFixed(1)}s · ${this.segments.length} zooms`;
 
         this.previewCanvas = document.getElementById('preview-canvas');
-        this.previewCtx = this.previewCanvas.getContext('2d', { willReadFrequently: false });
+        this.previewCtx = this.previewCanvas.getContext('2d', { willReadFrequently: true });
 
         // Reset cut selection state
         this._pendingCutStart = null;

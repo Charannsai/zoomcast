@@ -288,6 +288,27 @@ class ZoomEngine {
             this._drawVideoFrame(ctx, source, factor, cx, cy, screenX, screenY, screenW, screenH);
         }
 
+        // ── 6b. Remove the OS cursor baked into the capture stream ────────────
+        // We know EXACTLY where the cursor was at every frame (from cursorData).
+        // Erase at BOTH the raw interpolated position AND a small neighbourhood
+        // around it so even DPI-scaling drift can't leave remnants visible.
+        if (config.cursorData && config.cursorData.length > 0) {
+            const rawPos = this._interpolateCursor(t, config.cursorData);
+            if (rawPos) {
+                // Primary erase at exact tracked position
+                this._eraseCursorFromFrame(
+                    ctx, source, rawPos.x, rawPos.y,
+                    factor, cx, cy, screenX, screenY, screenW, screenH
+                );
+                // Secondary erase slightly offset (catches sub-pixel drift from DPI scaling)
+                const nudge = 0.003; // ~3-5 px at 1080p
+                this._eraseCursorFromFrame(
+                    ctx, source, rawPos.x + nudge, rawPos.y + nudge,
+                    factor, cx, cy, screenX, screenY, screenW, screenH
+                );
+            }
+        }
+
         // ── 7. Click ripples (computed in zoom-space → map back to screen) ──
         if (clickEffects && clickData) {
             for (const click of clickData) {
@@ -358,6 +379,114 @@ class ZoomEngine {
         ctx.restore();
 
         return zoom;
+    }
+
+    // ── Cursor Erasure — bilinear 4-corner inpainting ────────────────────────
+    /**
+     * Erase the baked-in OS cursor from the captured frame using bilinear
+     * interpolation from the four edges of the erase patch.
+     *
+     * For each pixel inside the erase circle we sample the four edge pixels
+     * (top, bottom, left, right) along its row/column and bilinearly blend
+     * them based on relative distance.  This produces clean results on
+     * gradients, text, complex UI, and solid colors alike.
+     *
+     * The erase radius is deliberately generous (+50% safety margin) to
+     * guarantee full coverage even with DPI scaling or cursor size changes.
+     */
+    static _eraseCursorFromFrame(ctx, source, nx, ny, factor, cx, cy, sx, sy, sw, sh) {
+        const pos = this._mapToScreen(nx, ny, factor, cx, cy, sx, sy, sw, sh);
+        if (!pos) return;
+
+        const px = Math.round(pos.x);
+        const py = Math.round(pos.y);
+
+        // Generous erase radius — OS cursor is ~32 logical px on Windows.
+        // We apply a 1.5× safety multiplier so even at HiDPI or unusual
+        // cursor themes the entire cursor footprint is covered.
+        const srcW = source.videoWidth || source.width || 1920;
+        const baseR = Math.ceil(32 * factor * (sw / srcW));
+        const r = Math.max(18, Math.min(Math.ceil(baseR * 1.5) + 10, 120));
+
+        // Patch bounds — slightly larger than the circle, clamped to clip region
+        const margin = 4;
+        const pL = Math.max(sx, px - r - margin);
+        const pT = Math.max(sy, py - r - margin);
+        const pR = Math.min(sx + sw - 1, px + r + margin);
+        const pB = Math.min(sy + sh - 1, py + r + margin);
+        const pw = pR - pL;
+        const ph = pB - pT;
+        if (pw <= 4 || ph <= 4) return;
+
+        let imgData;
+        try {
+            imgData = ctx.getImageData(pL, pT, pw, ph);
+        } catch (_) { return; }
+
+        const { data, width, height } = imgData;
+
+        // Snapshot of original pixels — reads come from this immutable copy
+        // so writes to `data` don't corrupt later samples.
+        const orig = new Uint8ClampedArray(data);
+
+        // Cursor centre in patch-local coordinates
+        const lcx = px - pL;
+        const lcy = py - pT;
+        const rSq = r * r;
+
+        for (let row = 0; row < height; row++) {
+            const dy = row - lcy;
+            if (dy * dy >= rSq) continue;  // row outside circle
+
+            const halfChord = Math.sqrt(rSq - dy * dy);
+            const colL = Math.round(lcx - halfChord);
+            const colR = Math.round(lcx + halfChord);
+
+            // Edge sample columns (just outside circle, clamped)
+            const edgeL = Math.max(0, colL - 2);
+            const edgeR = Math.min(width - 1, colR + 2);
+
+            // Edge sample rows for vertical interpolation
+            const edgeT = Math.max(0, Math.round(lcy - halfChord) - 2);
+            const edgeB = Math.min(height - 1, Math.round(lcy + halfChord) + 2);
+
+            // Left/right colour samples for this row
+            const liIdx = (row * width + edgeL) * 4;
+            const riIdx = (row * width + edgeR) * 4;
+
+            const hSpan = edgeR - edgeL;
+
+            for (let col = Math.max(0, colL); col <= Math.min(width - 1, colR); col++) {
+                // Horizontal blend factor
+                const hT = hSpan > 0 ? (col - edgeL) / hSpan : 0.5;
+
+                // Horizontal interpolated color
+                const hR = orig[liIdx] * (1 - hT) + orig[riIdx] * hT;
+                const hG = orig[liIdx + 1] * (1 - hT) + orig[riIdx + 1] * hT;
+                const hB = orig[liIdx + 2] * (1 - hT) + orig[riIdx + 2] * hT;
+
+                // Top/bottom colour samples for this column
+                const tiIdx = (edgeT * width + col) * 4;
+                const biIdx = (edgeB * width + col) * 4;
+
+                const vSpan = edgeB - edgeT;
+                const vT = vSpan > 0 ? (row - edgeT) / vSpan : 0.5;
+
+                // Vertical interpolated color
+                const vR = orig[tiIdx] * (1 - vT) + orig[biIdx] * vT;
+                const vG = orig[tiIdx + 1] * (1 - vT) + orig[biIdx + 1] * vT;
+                const vB = orig[tiIdx + 2] * (1 - vT) + orig[biIdx + 2] * vT;
+
+                // Blend horizontal and vertical 50/50 for bilinear result
+                const di = (row * width + col) * 4;
+                data[di] = (hR * 0.5 + vR * 0.5 + 0.5) | 0;
+                data[di + 1] = (hG * 0.5 + vG * 0.5 + 0.5) | 0;
+                data[di + 2] = (hB * 0.5 + vB * 0.5 + 0.5) | 0;
+                data[di + 3] = 255;
+            }
+        }
+
+        ctx.putImageData(imgData, pL, pT);
     }
 
     // ── Draw Video Frame (correct zoom math: translate-scale-translate) ──
@@ -456,7 +585,12 @@ class ZoomEngine {
     }
 
     // ── Image cursor drawing ──
-    static BASE_CURSOR_PX = 32;
+    // Minimum cursor size ensures the styled cursor is always large enough
+    // to completely cover the erased OS cursor region.  Even if the user
+    // drags the size slider down, the cursor never becomes so small that
+    // inpainting artifacts peek through.
+    static BASE_CURSOR_PX = 36;
+    static MIN_CURSOR_PX = 28;
 
     static _drawImageCursor(ctx, x, y, scale, styleKey, type) {
         const images = this._cursorImages[styleKey];
@@ -464,15 +598,23 @@ class ZoomEngine {
         const img = images[type];
         if (!img.complete || img.naturalWidth === 0) return;
 
-        const drawH = this.BASE_CURSOR_PX * scale;
+        // Enforce minimum size so cursor always covers the erase patch
+        const rawH = this.BASE_CURSOR_PX * scale;
+        const drawH = Math.max(this.MIN_CURSOR_PX, rawH);
         const drawW = drawH * (img.naturalWidth / img.naturalHeight);
 
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
 
         if (type === 'cur') {
+            // The styled cursor tip (top-left of the arrow image) is placed
+            // exactly at the tracked OS cursor hotspot.  This ensures the
+            // styled cursor sits right on top of where the OS cursor was,
+            // providing pixel-perfect coverage.
             ctx.drawImage(img, x, y, drawW, drawH);
         } else {
+            // Hand / text cursors: offset so the interaction point (finger
+            // tip / text I-beam centre) lands on the tracked position.
             ctx.drawImage(img, x - drawW * 0.28, y, drawW, drawH);
         }
     }
