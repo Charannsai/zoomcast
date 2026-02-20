@@ -132,10 +132,10 @@ ipcMain.handle('start-tracking', (event, payload) => {
   const bw = displayBounds?.width || 1920;
   const bh = displayBounds?.height || 1080;
 
-  // On Windows with HiDPI, getCursorScreenPoint() returns PHYSICAL pixels but
-  // display.bounds uses LOGICAL pixels.  Divide by (logical * scale) to get [0,1].
-  const sw = bw * scaleFactor;
-  const sh = bh * scaleFactor;
+  // On Windows, getCursorScreenPoint() returns LOGICAL pixels,
+  // matching display.bounds. Divide by logical width/height to get [0,1].
+  const sw = bw;
+  const sh = bh;
 
   // Poll cursor position at 60Hz for smooth, accurate tracking
   cursorInterval = setInterval(() => {
@@ -143,7 +143,7 @@ ipcMain.handle('start-tracking', (event, payload) => {
     const point = screen.getCursorScreenPoint();
     const t = (Date.now() - recordingStartTime) / 1000;
 
-    // Normalize to [0, 1] within the recording display (DPI-compensated)
+    // Normalize to [0, 1] within the recording display
     const nx = (point.x - bx) / sw;
     const ny = (point.y - by) / sh;
 

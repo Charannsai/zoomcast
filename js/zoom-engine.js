@@ -288,26 +288,11 @@ class ZoomEngine {
             this._drawVideoFrame(ctx, source, factor, cx, cy, screenX, screenY, screenW, screenH);
         }
 
-        // ── 6b. Remove the OS cursor baked into the capture stream ────────────
-        // We know EXACTLY where the cursor was at every frame (from cursorData).
-        // Erase at BOTH the raw interpolated position AND a small neighbourhood
-        // around it so even DPI-scaling drift can't leave remnants visible.
-        if (config.cursorData && config.cursorData.length > 0) {
-            const rawPos = this._interpolateCursor(t, config.cursorData);
-            if (rawPos) {
-                // Primary erase at exact tracked position
-                this._eraseCursorFromFrame(
-                    ctx, source, rawPos.x, rawPos.y,
-                    factor, cx, cy, screenX, screenY, screenW, screenH
-                );
-                // Secondary erase slightly offset (catches sub-pixel drift from DPI scaling)
-                const nudge = 0.003; // ~3-5 px at 1080p
-                this._eraseCursorFromFrame(
-                    ctx, source, rawPos.x + nudge, rawPos.y + nudge,
-                    factor, cx, cy, screenX, screenY, screenW, screenH
-                );
-            }
-        }
+        // ── 6b. Perfect Cover Strategy (No blur) ──────────────────────────────────
+        // Instead of erasing the OS cursor and causing blur artifacts, we will
+        // draw the custom styled cursor EXACTLY on top of the original hardware
+        // cursor's tracked position, and scale it accurately with the zoom factor
+        // so it physically occludes the original white/black arrow perfectly.
 
         // ── 7. Click ripples (computed in zoom-space → map back to screen) ──
         if (clickEffects && clickData) {
@@ -349,21 +334,30 @@ class ZoomEngine {
         ctx.restore(); // End clip region
 
         // ── 8. Cursor — drawn AFTER restore(), in pure screen space ──
-        // CRITICAL: ctx transform is now identity. Cursor is NEVER zoomed.
-        if (cursorData && cursorData.length > 0 && cursorPos) {
-            const pos = this._mapToScreen(cursorPos.x, cursorPos.y, factor, cx, cy, screenX, screenY, screenW, screenH);
-            if (pos) {
-                const isHand = this._isNearClick(t, clickData, 0.2);
-                const type = isHand ? 'hand' : 'cur';
+        // CRITICAL: We draw the custom cursor at the EXACT RAW position (no lag)
+        // so it perfectly overlays the baked-in OS cursor. We multiply cursorSize
+        // by the zoom factor so it expands physically to cover the zoomed OS cursor.
+        if (cursorData && cursorData.length > 0) {
+            // Use exact raw position for perfect occlusion, no lag
+            const rawCursor = this._interpolateCursor(t, cursorData);
+            if (rawCursor) {
+                const pos = this._mapToScreen(rawCursor.x, rawCursor.y, factor, cx, cy, screenX, screenY, screenW, screenH);
+                if (pos) {
+                    const isHand = this._isNearClick(t, clickData, 0.2);
+                    const type = isHand ? 'hand' : 'cur';
 
-                if (cursorMotionBlur) {
-                    this._drawCursorWithBlur(ctx, t, cursorData, factor, cx, cy, screenX, screenY, screenW, screenH, cursorSize, cursorStyle, type, cursorSpeed, clickData);
-                } else {
-                    // Save/restore so cursor drawing is isolated
-                    ctx.save();
-                    ctx.setTransform(1, 0, 0, 1, 0, 0); // Absolute identity — never inside zoom transform
-                    this._drawImageCursor(ctx, pos.x, pos.y, cursorSize, cursorStyle, type);
-                    ctx.restore();
+                    // Multiply size by factor so the custom cursor zooms in perfectly
+                    const scaledSize = cursorSize * factor;
+
+                    if (cursorMotionBlur) {
+                        this._drawCursorWithBlur(ctx, t, cursorData, factor, cx, cy, screenX, screenY, screenW, screenH, scaledSize, cursorStyle, type, cursorSpeed, clickData);
+                    } else {
+                        // Save/restore so cursor drawing is isolated
+                        ctx.save();
+                        ctx.setTransform(1, 0, 0, 1, 0, 0); // Absolute identity — never inside zoom transform
+                        this._drawImageCursor(ctx, pos.x, pos.y, scaledSize, cursorStyle, type);
+                        ctx.restore();
+                    }
                 }
             }
         }
@@ -381,113 +375,6 @@ class ZoomEngine {
         return zoom;
     }
 
-    // ── Cursor Erasure — bilinear 4-corner inpainting ────────────────────────
-    /**
-     * Erase the baked-in OS cursor from the captured frame using bilinear
-     * interpolation from the four edges of the erase patch.
-     *
-     * For each pixel inside the erase circle we sample the four edge pixels
-     * (top, bottom, left, right) along its row/column and bilinearly blend
-     * them based on relative distance.  This produces clean results on
-     * gradients, text, complex UI, and solid colors alike.
-     *
-     * The erase radius is deliberately generous (+50% safety margin) to
-     * guarantee full coverage even with DPI scaling or cursor size changes.
-     */
-    static _eraseCursorFromFrame(ctx, source, nx, ny, factor, cx, cy, sx, sy, sw, sh) {
-        const pos = this._mapToScreen(nx, ny, factor, cx, cy, sx, sy, sw, sh);
-        if (!pos) return;
-
-        const px = Math.round(pos.x);
-        const py = Math.round(pos.y);
-
-        // Generous erase radius — OS cursor is ~32 logical px on Windows.
-        // We apply a 1.5× safety multiplier so even at HiDPI or unusual
-        // cursor themes the entire cursor footprint is covered.
-        const srcW = source.videoWidth || source.width || 1920;
-        const baseR = Math.ceil(32 * factor * (sw / srcW));
-        const r = Math.max(18, Math.min(Math.ceil(baseR * 1.5) + 10, 120));
-
-        // Patch bounds — slightly larger than the circle, clamped to clip region
-        const margin = 4;
-        const pL = Math.max(sx, px - r - margin);
-        const pT = Math.max(sy, py - r - margin);
-        const pR = Math.min(sx + sw - 1, px + r + margin);
-        const pB = Math.min(sy + sh - 1, py + r + margin);
-        const pw = pR - pL;
-        const ph = pB - pT;
-        if (pw <= 4 || ph <= 4) return;
-
-        let imgData;
-        try {
-            imgData = ctx.getImageData(pL, pT, pw, ph);
-        } catch (_) { return; }
-
-        const { data, width, height } = imgData;
-
-        // Snapshot of original pixels — reads come from this immutable copy
-        // so writes to `data` don't corrupt later samples.
-        const orig = new Uint8ClampedArray(data);
-
-        // Cursor centre in patch-local coordinates
-        const lcx = px - pL;
-        const lcy = py - pT;
-        const rSq = r * r;
-
-        for (let row = 0; row < height; row++) {
-            const dy = row - lcy;
-            if (dy * dy >= rSq) continue;  // row outside circle
-
-            const halfChord = Math.sqrt(rSq - dy * dy);
-            const colL = Math.round(lcx - halfChord);
-            const colR = Math.round(lcx + halfChord);
-
-            // Edge sample columns (just outside circle, clamped)
-            const edgeL = Math.max(0, colL - 2);
-            const edgeR = Math.min(width - 1, colR + 2);
-
-            // Edge sample rows for vertical interpolation
-            const edgeT = Math.max(0, Math.round(lcy - halfChord) - 2);
-            const edgeB = Math.min(height - 1, Math.round(lcy + halfChord) + 2);
-
-            // Left/right colour samples for this row
-            const liIdx = (row * width + edgeL) * 4;
-            const riIdx = (row * width + edgeR) * 4;
-
-            const hSpan = edgeR - edgeL;
-
-            for (let col = Math.max(0, colL); col <= Math.min(width - 1, colR); col++) {
-                // Horizontal blend factor
-                const hT = hSpan > 0 ? (col - edgeL) / hSpan : 0.5;
-
-                // Horizontal interpolated color
-                const hR = orig[liIdx] * (1 - hT) + orig[riIdx] * hT;
-                const hG = orig[liIdx + 1] * (1 - hT) + orig[riIdx + 1] * hT;
-                const hB = orig[liIdx + 2] * (1 - hT) + orig[riIdx + 2] * hT;
-
-                // Top/bottom colour samples for this column
-                const tiIdx = (edgeT * width + col) * 4;
-                const biIdx = (edgeB * width + col) * 4;
-
-                const vSpan = edgeB - edgeT;
-                const vT = vSpan > 0 ? (row - edgeT) / vSpan : 0.5;
-
-                // Vertical interpolated color
-                const vR = orig[tiIdx] * (1 - vT) + orig[biIdx] * vT;
-                const vG = orig[tiIdx + 1] * (1 - vT) + orig[biIdx + 1] * vT;
-                const vB = orig[tiIdx + 2] * (1 - vT) + orig[biIdx + 2] * vT;
-
-                // Blend horizontal and vertical 50/50 for bilinear result
-                const di = (row * width + col) * 4;
-                data[di] = (hR * 0.5 + vR * 0.5 + 0.5) | 0;
-                data[di + 1] = (hG * 0.5 + vG * 0.5 + 0.5) | 0;
-                data[di + 2] = (hB * 0.5 + vB * 0.5 + 0.5) | 0;
-                data[di + 3] = 255;
-            }
-        }
-
-        ctx.putImageData(imgData, pL, pT);
-    }
 
     // ── Draw Video Frame (correct zoom math: translate-scale-translate) ──
     static _drawVideoFrame(ctx, source, factor, cx, cy, sx, sy, sw, sh) {
@@ -585,12 +472,10 @@ class ZoomEngine {
     }
 
     // ── Image cursor drawing ──
-    // Minimum cursor size ensures the styled cursor is always large enough
-    // to completely cover the erased OS cursor region.  Even if the user
-    // drags the size slider down, the cursor never becomes so small that
-    // inpainting artifacts peek through.
-    static BASE_CURSOR_PX = 36;
-    static MIN_CURSOR_PX = 28;
+    // Use a slightly larger baseline ("middle size") so that it robustly covers
+    // standard OS cursors at any zoom scale natively.
+    static BASE_CURSOR_PX = 45;
+    static MIN_CURSOR_PX = 32;
 
     static _drawImageCursor(ctx, x, y, scale, styleKey, type) {
         const images = this._cursorImages[styleKey];
