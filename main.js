@@ -19,6 +19,9 @@ let isRecording = false;
 // Python cursor tracker process
 let cursorTracker = null;
 
+// Transparent cursor-hiding overlay window (shown during recording)
+let cursorHideOverlay = null;
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -69,6 +72,7 @@ app.whenReady().then(() => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   stopCursorTracking();
+  hideCursorHideOverlay();
 });
 
 app.on('window-all-closed', () => {
@@ -144,6 +148,9 @@ ipcMain.handle('start-tracking', (event, displayBounds) => {
     cursorData.push({ t, x: cx, y: cy, rx: point.x, ry: point.y });
   }, 16); // ~60fps tracking for accurate cursor path
 
+  // Show transparent cursor-hiding overlay over the recording display
+  showCursorHideOverlay(displayBounds);
+
   // Start Python click tracker
   startClickTracker(displayBounds);
 
@@ -154,6 +161,8 @@ ipcMain.handle('start-tracking', (event, displayBounds) => {
 ipcMain.handle('stop-tracking', () => {
   isRecording = false;
   stopCursorTracking();
+  // Remove the cursor-hiding overlay so UI returns to normal
+  hideCursorHideOverlay();
   const result = { cursor: cursorData, clicks: clickData };
   return result;
 });
@@ -367,6 +376,61 @@ ipcMain.handle('cleanup-temp', async (event, dirPath) => {
     return { ok: false };
   }
 });
+
+// ─── Cursor Hide Overlay ────────────────────────────────────────
+
+/**
+ * Creates a transparent, always-on-top, click-through window covering the
+ * recording display. Its only job: apply `cursor: none` CSS so the OS cursor
+ * becomes invisible in the captured screen stream.
+ */
+function showCursorHideOverlay(displayBounds) {
+  if (cursorHideOverlay && !cursorHideOverlay.isDestroyed()) return;
+
+  const bounds = displayBounds || { x: 0, y: 0, width: 1920, height: 1080 };
+
+  cursorHideOverlay = new BrowserWindow({
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    transparent: true,
+    frame: false,
+    hasShadow: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    focusable: false,
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  // Minimal HTML that hides the cursor everywhere on screen
+  const html = `data:text/html,<!DOCTYPE html><html><head><style>
+    *,body,html{margin:0;padding:0;background:transparent;cursor:none!important;}
+  </style></head><body></body></html>`;
+
+  cursorHideOverlay.loadURL(html);
+
+  cursorHideOverlay.once('ready-to-show', () => {
+    if (cursorHideOverlay && !cursorHideOverlay.isDestroyed()) {
+      cursorHideOverlay.setIgnoreMouseEvents(true, { forward: true });
+      cursorHideOverlay.setAlwaysOnTop(true, 'screen-saver', 1);
+      cursorHideOverlay.show();
+    }
+  });
+
+  cursorHideOverlay.on('closed', () => { cursorHideOverlay = null; });
+}
+
+function hideCursorHideOverlay() {
+  if (cursorHideOverlay && !cursorHideOverlay.isDestroyed()) {
+    cursorHideOverlay.close();
+    cursorHideOverlay = null;
+  }
+}
 
 // ─── Cursor / Click Tracking ────────────────────────────────────
 

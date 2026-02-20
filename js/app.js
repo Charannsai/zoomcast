@@ -136,7 +136,9 @@ class ZoomCastApp {
                     mandatory: {
                         chromeMediaSource: 'desktop',
                         chromeMediaSourceId: this.selectedSource.id,
-                    }
+                        cursor: 'never',
+                    },
+                    cursor: 'never',
                 }
             });
 
