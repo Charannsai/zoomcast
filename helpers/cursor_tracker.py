@@ -9,6 +9,12 @@ import json
 import time
 import threading
 from pynput import mouse
+import ctypes
+
+try:
+    ctypes.windll.user32.SetProcessDPIAware()
+except Exception:
+    pass
 
 def main():
     def on_click(x, y, button, pressed):

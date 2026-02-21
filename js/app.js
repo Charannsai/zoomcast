@@ -132,14 +132,21 @@ class ZoomCastApp {
         try {
             const displays = await window.zoomcast.getDisplays();
             let display = displays[0];
+            let displayIdx = 0;
 
             if (this.selectedSource?.display_id) {
-                const matched = displays.find(d => String(d.id) === String(this.selectedSource.display_id));
-                if (matched) display = matched;
+                const matchedIdx = displays.findIndex(d => String(d.id) === String(this.selectedSource.display_id));
+                if (matchedIdx !== -1) {
+                    display = displays[matchedIdx];
+                    displayIdx = matchedIdx;
+                }
             } else if (this.selectedSource?.id) {
                 const parts = this.selectedSource.id.split(':');
                 const idx = parts.length > 1 ? parseInt(parts[1]) : NaN;
-                if (!isNaN(idx) && displays[idx]) display = displays[idx];
+                if (!isNaN(idx) && displays[idx]) {
+                    display = displays[idx];
+                    displayIdx = idx;
+                }
             }
 
             this.displayBounds = display?.bounds || { x: 0, y: 0, width: 1920, height: 1080 };
@@ -156,7 +163,7 @@ class ZoomCastApp {
             this.firstCursorSampleTimestamp = null;
 
             // Start Native DXGI capture (bypasses Chromium completely)
-            this.nativeRecordingResult = await window.zoomcast.startNativeRecording({});
+            this.nativeRecordingResult = await window.zoomcast.startNativeRecording({ displayIdx });
 
             const trackResult = await window.zoomcast.startTracking({
                 bounds: this.displayBounds,

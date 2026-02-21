@@ -6,15 +6,16 @@ import time
 
 def main():
     if len(sys.argv) < 3:
-        print("Usage: dxgi_capture.py <output_file> <ffmpeg_path>")
+        print("Usage: dxgi_capture.py <output_file> <ffmpeg_path> [display_idx]")
         sys.exit(1)
         
     out_path = sys.argv[1]
     ffmpeg_path = sys.argv[2]
+    display_idx = int(sys.argv[3]) if len(sys.argv) > 3 else 0
     
     # Initialize DXGI capture. This uses Desktop Duplication API natively!
     # By default, it DOES NOT capture the pointer shape.
-    camera = dxcam.create(output_color="BGRA")
+    camera = dxcam.create(output_idx=display_idx, output_color="BGRA")
     
     width = camera.width
     height = camera.height
@@ -44,11 +45,15 @@ def main():
     running = True
 
     def capture_loop():
+        first_frame = True
         # Read from dxcam queue
         while running:
             # get_latest_frame waits for a new frame based on target_fps
             frame = camera.get_latest_frame()
             if frame is not None:
+                if first_frame:
+                    print("READY", flush=True)
+                    first_frame = False
                 try:
                     process.stdin.write(frame.tobytes())
                 except Exception as e:

@@ -205,6 +205,7 @@ ipcMain.handle('get-temp-dir', () => {
 let dxgiCaptureProc = null;
 
 ipcMain.handle('start-native-recording', async (event, options) => {
+  const displayIdx = options?.displayIdx || 0;
   const tmpDir = path.join(app.getPath('temp'), 'zoomcast');
   if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
   // write to mp4, python uses libx264
@@ -216,17 +217,20 @@ ipcMain.handle('start-native-recording', async (event, options) => {
 
   return new Promise((resolve) => {
     const scriptPath = path.join(__dirname, 'helpers', 'dxgi_capture.py');
-    dxgiCaptureProc = spawn('python', [scriptPath, outPath, ffmpegPath], {
-      stdio: ['pipe', 'inherit', 'inherit'],
+    dxgiCaptureProc = spawn('python', [scriptPath, outPath, ffmpegPath, String(displayIdx)], {
+      stdio: ['pipe', 'pipe', 'inherit'],
+    });
+
+    dxgiCaptureProc.stdout.on('data', (d) => {
+      const msg = d.toString();
+      if (msg.includes('READY')) {
+        resolve({ ok: true, tempPath: outPath });
+      }
     });
 
     dxgiCaptureProc.on('error', (err) => {
       resolve({ ok: false, error: err.message });
     });
-
-    setTimeout(() => {
-      resolve({ ok: true, tempPath: outPath });
-    }, 500);
   });
 });
 
