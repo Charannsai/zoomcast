@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld('zoomcast', {
     minimize: () => ipcRenderer.send('window-minimize'),
     maximize: () => ipcRenderer.send('window-maximize'),
     close: () => ipcRenderer.send('window-close'),
+    hide: () => ipcRenderer.send('window-hide'),
+    show: () => ipcRenderer.send('window-show'),
+    setOpacity: (opacity) => ipcRenderer.send('window-opacity', opacity),
 
     // Screen sources
     getSources: () => ipcRenderer.invoke('get-sources'),
@@ -18,6 +21,8 @@ contextBridge.exposeInMainWorld('zoomcast', {
     // Recording
     startTracking: (displayBounds) => ipcRenderer.invoke('start-tracking', displayBounds),
     stopTracking: () => ipcRenderer.invoke('stop-tracking'),
+    startModal: () => ipcRenderer.send('start-modal'),
+    triggerStop: () => ipcRenderer.send('trigger-stop-recording'),
 
     // File operations
     startNativeRecording: (options) => ipcRenderer.invoke('start-native-recording', options),

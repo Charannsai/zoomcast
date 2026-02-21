@@ -10,6 +10,7 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 
 let mainWindow = null;
+let modalWindow = null;
 let cursorInterval = null;
 let cursorData = [];
 let clickData = [];
@@ -26,9 +27,9 @@ function createWindow() {
     height: 800,
     minWidth: 1000,
     minHeight: 700,
+    transparent: true,
     frame: false,
     titleBarStyle: 'hidden',
-    backgroundColor: '#0e1015',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -89,6 +90,57 @@ ipcMain.on('window-maximize', () => {
   else mainWindow?.maximize();
 });
 ipcMain.on('window-close', () => mainWindow?.close());
+ipcMain.on('window-hide', () => mainWindow?.hide());
+ipcMain.on('window-show', () => mainWindow?.show());
+ipcMain.on('window-opacity', (event, opacity) => {
+  if (mainWindow) {
+    if (opacity < 1) {
+      mainWindow.setOpacity(opacity);
+      // Hide from taskbar and make completely click-through
+      mainWindow.setSkipTaskbar(true);
+      mainWindow.setIgnoreMouseEvents(true, { forward: true });
+    } else {
+      mainWindow.setOpacity(1);
+      mainWindow.setSkipTaskbar(false);
+      mainWindow.setIgnoreMouseEvents(false);
+    }
+  }
+});
+
+ipcMain.on('start-modal', () => {
+  if (modalWindow) return;
+  const primary = screen.getPrimaryDisplay();
+  modalWindow = new BrowserWindow({
+    width: 220,
+    height: 120,
+    x: primary.workAreaSize.width - 240,
+    y: primary.workAreaSize.height - 140,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true
+    }
+  });
+  modalWindow.setContentProtection(true); // Exclude from DXGI capture
+  modalWindow.loadFile('modal.html');
+  mainWindow?.minimize();
+});
+
+ipcMain.on('trigger-stop-recording', () => {
+  if (mainWindow) {
+    mainWindow.webContents.send('stop-recording');
+    mainWindow.restore();
+    mainWindow.focus();
+  }
+  if (modalWindow) {
+    modalWindow.close();
+    modalWindow = null;
+  }
+});
 
 // Get screen sources for recording
 ipcMain.handle('get-sources', async () => {

@@ -176,8 +176,7 @@ class ZoomCastApp {
             });
             this.firstCursorSampleTimestamp = trackResult.startTime || explicitStartTime;
 
-            document.getElementById('recording-overlay').classList.remove('hidden');
-            this.timerInterval = setInterval(() => this._updateTimer(), 50);
+            window.zoomcast.startModal();
 
         } catch (err) {
             console.error('Failed to start recording:', err);
@@ -210,6 +209,7 @@ class ZoomCastApp {
             seen.add(key);
             return true;
         });
+
         // Once stop tracking signals, actually load the video
         this._onRecordingComplete();
     }

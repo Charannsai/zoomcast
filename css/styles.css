@@ -75,6 +75,10 @@ html, body {
   user-select: none;
 }
 
+body.transparent-mode {
+  background: transparent !important;
+}
+
 /* Hide the native OS cursor over the preview canvas so the
    custom styled cursor drawn on the canvas is the only one visible. */
 #preview-canvas,
@@ -1228,6 +1232,41 @@ button:not(:disabled),
   box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 0 1000px rgba(0,0,0,0.4);
   z-index: 50;
   backdrop-filter: blur(8px);
+}
+
+
+/* Float Modal overrides */
+#app.recording-mode {
+    background: transparent !important;
+}
+
+#app.recording-mode .home-layout {
+    opacity: 0;
+    pointer-events: none;
+}
+
+#app.recording-mode .recording-overlay {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    left: auto;
+    transform: none;
+    background: rgba(14, 16, 21, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 16px;
+    padding: 20px 24px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.6);
+    -webkit-app-region: drag; /* make it draggable if user wants */
+}
+
+#app.recording-mode .recording-overlay.hidden {
+    transform: translateY(20px);
+    opacity: 0;
+    pointer-events: none;
+}
+
+#app.recording-mode .ctrl-btn {
+    -webkit-app-region: no-drag;
 }
 .complete-icon { font-size: 48px; margin-bottom: 20px; }
 .export-complete h2 { font-size: 20px; font-weight: 700; color: var(--text); }

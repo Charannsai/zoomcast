@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>ZoomCast Modal</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: transparent;
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+        }
+
+        .modal {
+            background: rgba(14, 16, 21, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            -webkit-app-region: drag;
+            height: calc(100vh - 32px);
+            margin: 16px;
+            box-sizing: border-box;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            background: #e84393;
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.4;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        .timer {
+            font-size: 24px;
+            font-weight: 300;
+            font-variant-numeric: tabular-nums;
+            text-align: center;
+        }
+
+        .btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 6px;
+            color: white;
+            padding: 8px;
+            width: 100%;
+            cursor: pointer;
+            -webkit-app-region: no-drag;
+            font-size: 13px;
+            transition: 0.2s;
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn.stop {
+            background: rgba(232, 67, 147, 0.2);
+            border: 1px solid rgba(232, 67, 147, 0.5);
+        }
+
+        .btn.stop:hover {
+            background: rgba(232, 67, 147, 0.4);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="modal">
+        <div class="header">
+            <div class="dot"></div> Recording
+        </div>
+        <div class="timer" id="timer">00:00:00</div>
+        <button class="btn stop" id="stop">Stop Recording</button>
+    </div>
+    <script>
+        const start = Date.now();
+        setInterval(() => {
+            const el = (Date.now() - start) / 1000;
+            const h = Math.floor(el / 3600).toString().padStart(2, '0');
+            const m = Math.floor((el % 3600) / 60).toString().padStart(2, '0');
+            const s = Math.floor(el % 60).toString().padStart(2, '0');
+            document.getElementById('timer').innerText = `${h}:${m}:${s}`;
+        }, 100);
+        document.getElementById('stop').onclick = () => {
+            window.zoomcast.triggerStop();
+        };
+    </script>
+</body>
+
+</html>
