@@ -44,54 +44,77 @@ def main():
     
     running = True
 
-    def capture_loop():
-        first_frame = True
-        last_frame = None
+    import queue
+    frame_queue = queue.Queue(maxsize=300)
+    
+    # We will share the latest frame across threads using a lock
+    latest_frame = None
+    frame_lock = threading.Lock()
+    
+    def grab_loop():
+        nonlocal latest_frame
+        while running:
+            # We want to pull as fast as possible to make sure we always have the freshest possible frame
+            # dxcam.grab() is generally quite fast and only captures when something changes or up to max 60hz.
+            f = camera.grab()
+            if f is not None:
+                with frame_lock:
+                    latest_frame = f
+            time.sleep(0.005) # Yield thread slightly
+
+    def write_loop():
+        nonlocal latest_frame
+        
+        # Wait until we get the very first frame to start the wallclock
+        while latest_frame is None and running:
+            time.sleep(0.005)
+            
+        if not running: return
+            
+        print(f"READY {time.time() * 1000}", flush=True)
+        
+        start_time = time.perf_counter()
         frames_sent = 0
-        start_time = None
         
         while running:
-            # Need to pick up the very first unblocked frame to clock ZERO.
-            if start_time is None:
-                frame = camera.grab()
-                if frame is not None:
-                    last_frame = frame
-                    start_time = time.perf_counter()
-                    print(f"READY {time.time() * 1000}", flush=True)
-                    first_frame = False
-                    
-                    try:
-                        process.stdin.write(last_frame.tobytes())
-                        frames_sent += 1
-                    except Exception:
-                        break
-                else:
-                    time.sleep(0.001)
-                continue
-            
             now = time.perf_counter()
             target_frames = int((now - start_time) * fps)
             
             if target_frames > frames_sent:
-                # We need to send frames to catch up to wall-clock time
-                frame = camera.grab()
-                if frame is not None:
-                    last_frame = frame
+                frames_to_write = target_frames - frames_sent
                 
-                if last_frame is not None:
-                    try:
-                        # Write exactly enough duplicates to lock FFmpeg timeline to physical time
-                        frames_to_write = target_frames - frames_sent
-                        for _ in range(frames_to_write):
-                            process.stdin.write(last_frame.tobytes())
+                with frame_lock:
+                    f = latest_frame
+                
+                if f is not None:
+                    # Put EXACT amount of duplicates into queue so ffmpeg never loses a decimal second
+                    for _ in range(frames_to_write):
+                        try:
+                            frame_queue.put_nowait(f)
                             frames_sent += 1
-                    except Exception:
-                        break
+                        except queue.Full:
+                            # If ffmpeg is deadlocked, we just skip buffering so we don't crash ram
+                            pass
             else:
                 time.sleep(0.001)
-                    
-    cap_thread = threading.Thread(target=capture_loop, daemon=True)
-    cap_thread.start()
+
+    def ffmpeg_loop():
+        while running:
+            try:
+                f = frame_queue.get(timeout=0.1)
+                process.stdin.write(f.tobytes())
+            except queue.Empty:
+                continue
+            except Exception:
+                break
+                
+    t_grab = threading.Thread(target=grab_loop, daemon=True)
+    t_write = threading.Thread(target=write_loop, daemon=True)
+    t_ffmpeg = threading.Thread(target=ffmpeg_loop, daemon=True)
+    
+    t_grab.start()
+    t_write.start()
+    t_ffmpeg.start()
     
     # Wait for STOP signal from Node.js (via stdin or simply closing stdin)
     try:
