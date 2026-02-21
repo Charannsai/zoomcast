@@ -119,8 +119,32 @@ class Timeline {
             return;
         }
 
-        // Thumbnails area click (selects a clip, moves playhead)
+        // Thumbnails area click (selects a clip, checks handles, moves playhead)
         if (y < this.THUMB_H) {
+            // 1. Check clip edges first (trim handles)
+            for (const c of this.clips) {
+                const cx1 = this._tToX(c.start);
+                const cx2 = this._tToX(c.end);
+
+                if (Math.abs(x - cx1) <= 8) {
+                    this.selectedClip = c;
+                    this.selectedSeg = null;
+                    this.onSelectionChange(null, c);
+                    this._drag = { clip: c, type: 'clip-left', startX: x, origStart: c.start };
+                    this._setCursor('ew-resize');
+                    return;
+                }
+                if (Math.abs(x - cx2) <= 8) {
+                    this.selectedClip = c;
+                    this.selectedSeg = null;
+                    this.onSelectionChange(null, c);
+                    this._drag = { clip: c, type: 'clip-right', startX: x, origEnd: c.end };
+                    this._setCursor('ew-resize');
+                    return;
+                }
+            }
+
+            // 2. Otherwise select clip or seek
             this.playhead = t;
             const clip = this.clips.find(c => t >= c.start && t < c.end);
             this.selectedClip = clip || null;
@@ -200,8 +224,36 @@ class Timeline {
                 this.draw();
                 return;
             }
+
+            const dt = this._xToT(x) - this._xToT(this._drag.startX);
+
+            if (this._drag.clip) {
+                const clip = this._drag.clip;
+                if (this._drag.type === 'clip-left') {
+                    const maxStart = clip.end - 0.2;
+                    let newStart = this._drag.origStart + dt;
+                    // constrain to previous clip end
+                    const idx = this.clips.indexOf(clip);
+                    const minStart = idx > 0 ? this.clips[idx - 1].end : 0;
+                    clip.start = Math.max(minStart, Math.min(maxStart, newStart));
+                    this._rebuildCutsFromClips();
+                    this.onSelectionChange(null, clip);
+                    this.draw();
+                } else if (this._drag.type === 'clip-right') {
+                    const minEnd = clip.start + 0.2;
+                    let newEnd = this._drag.origEnd + dt;
+                    // constrain to next clip start
+                    const idx = this.clips.indexOf(clip);
+                    const maxEnd = idx < this.clips.length - 1 ? this.clips[idx + 1].start : this.duration;
+                    clip.end = Math.max(minEnd, Math.min(newEnd, maxEnd));
+                    this._rebuildCutsFromClips();
+                    this.onSelectionChange(null, clip);
+                    this.draw();
+                }
+                return;
+            }
+
             const { seg, type, startX, origStart, origEnd } = this._drag;
-            const dt = this._xToT(x) - this._xToT(startX);
             const minDur = 0.15;
             if (type === 'left') {
                 let newStart = origStart + dt;
@@ -238,8 +290,9 @@ class Timeline {
     }
 
     _onMouseUp(e) {
-        if (this._drag && this._drag.type !== 'seek' && this._drag.seg) {
-            this.onSegmentChange(this._drag.seg);
+        if (this._drag && this._drag.type !== 'seek') {
+            if (this._drag.seg) this.onSegmentChange(this._drag.seg);
+            if (this._drag.clip) this.onSelectionChange(null, this._drag.clip);
         }
         this._drag = null;
     }

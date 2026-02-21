@@ -541,6 +541,7 @@ class ZoomCastApp {
             `;
             return;
         }
+        const dur = (seg.tEnd - seg.tStart).toFixed(2);
 
         container.innerHTML = `
       <div class="seg-header">
