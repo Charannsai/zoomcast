@@ -213,9 +213,13 @@ class ZoomEngine {
         // ── 2. Resolve manual zoom state ──────────────────────────
         let zoom = this.getZoomAt(t, segments, panSpeed);
 
+        // ── Calculate ONE synced time for cursor (Problem 2 & 5) ──
+        const VIDEO_LATENCY_DELAY = config.captureOffset !== undefined ? config.captureOffset : 0.050;
+        const syncT = Math.max(0, t - VIDEO_LATENCY_DELAY);
+
         // ── 3. Smart cursor-follow (cinematic lerp) ────────────────
         const cursorPos = (cursorData && cursorData.length > 0)
-            ? this.getSmoothedCursorAt(t, cursorData, cursorSpeed)
+            ? this.getSmoothedCursorAt(syncT, cursorData, cursorSpeed)
             : null;
 
         // Detect scrub (large time jump) → snap camera instead of lerp
@@ -334,35 +338,23 @@ class ZoomEngine {
         ctx.restore(); // End clip region
 
         // ── 8. Cursor — drawn AFTER restore(), in pure screen space ──
-        // CRITICAL: We draw the custom cursor with latency compensation.
-        // Electron's WebRTC desktop capture loop introduces ~40-60ms of video latency 
-        // compared to the instantaneous hardware cursor polling in main.js.
-        // By shifting the timeline backwards by 50ms, the raw cursor data perfectly locks 
-        // onto the baked-in OS cursor's position, completely covering it during fast movements.
-        if (cursorData && cursorData.length > 0) {
-            // APPLY LATENCY COMPENSATION
-            const VIDEO_LATENCY_DELAY = 0.050; // 50ms
-            const syncT = Math.max(0, t - VIDEO_LATENCY_DELAY);
+        if (cursorPos) {
+            const pos = this._mapToScreen(cursorPos.x, cursorPos.y, factor, cx, cy, screenX, screenY, screenW, screenH);
+            if (pos) {
+                const isHand = this._isNearClick(t, clickData, 0.2);
+                const type = isHand ? 'hand' : 'cur';
 
-            const rawCursor = this._interpolateCursor(syncT, cursorData);
-            if (rawCursor) {
-                const pos = this._mapToScreen(rawCursor.x, rawCursor.y, factor, cx, cy, screenX, screenY, screenW, screenH);
-                if (pos) {
-                    const isHand = this._isNearClick(t, clickData, 0.2);
-                    const type = isHand ? 'hand' : 'cur';
+                // Multiply size by factor so the custom cursor zooms in perfectly
+                const scaledSize = cursorSize * factor;
 
-                    // Multiply size by factor so the custom cursor zooms in perfectly
-                    const scaledSize = cursorSize * factor;
-
-                    if (cursorMotionBlur) {
-                        this._drawCursorWithBlur(ctx, t, cursorData, factor, cx, cy, screenX, screenY, screenW, screenH, scaledSize, cursorStyle, type, cursorSpeed, clickData);
-                    } else {
-                        // Save/restore so cursor drawing is isolated
-                        ctx.save();
-                        ctx.setTransform(1, 0, 0, 1, 0, 0); // Absolute identity — never inside zoom transform
-                        this._drawImageCursor(ctx, pos.x, pos.y, scaledSize, cursorStyle, type);
-                        ctx.restore();
-                    }
+                if (cursorMotionBlur) {
+                    this._drawCursorWithBlur(ctx, syncT, cursorData, factor, cx, cy, screenX, screenY, screenW, screenH, scaledSize, cursorStyle, type, cursorSpeed, clickData);
+                } else {
+                    // Save/restore so cursor drawing is isolated
+                    ctx.save();
+                    ctx.setTransform(1, 0, 0, 1, 0, 0); // Absolute identity — never inside zoom transform
+                    this._drawImageCursor(ctx, pos.x, pos.y, scaledSize, cursorStyle, type);
+                    ctx.restore();
                 }
             }
         }
@@ -498,17 +490,27 @@ class ZoomEngine {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
 
+        let hotspotX = 0;
+        let hotspotY = 0;
+
         if (type === 'cur') {
-            // The styled cursor tip (top-left of the arrow image) is placed
-            // exactly at the tracked OS cursor hotspot.  This ensures the
-            // styled cursor sits right on top of where the OS cursor was,
-            // providing pixel-perfect coverage.
-            ctx.drawImage(img, x, y, drawW, drawH);
+            if (styleKey.includes('circle')) {
+                hotspotX = Math.round(drawW / 2);
+                hotspotY = Math.round(drawH / 2);
+            } else {
+                hotspotX = 0;
+                hotspotY = 0;
+            }
         } else {
-            // Hand / text cursors: offset so the interaction point (finger
-            // tip / text I-beam centre) lands on the tracked position.
-            ctx.drawImage(img, x - drawW * 0.28, y, drawW, drawH);
+            // Hand / text cursors offset approximation
+            hotspotX = Math.round(drawW * 0.28);
+            hotspotY = 0;
         }
+
+        const drawX = x - hotspotX;
+        const drawY = y - hotspotY;
+
+        ctx.drawImage(img, drawX, drawY, drawW, drawH);
     }
 
     // ── Preview for cursor picker ──
