@@ -58,7 +58,8 @@ def main():
                 frame = camera.get_latest_frame()
                 if frame is not None:
                     if first_frame:
-                        print("READY", flush=True)
+                        # Output exactly the time the frame was acquired
+                        print(f"READY {time.time() * 1000}", flush=True)
                         first_frame = False
                     try:
                         process.stdin.write(frame.tobytes())

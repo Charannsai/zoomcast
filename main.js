@@ -225,7 +225,9 @@ ipcMain.handle('start-native-recording', async (event, options) => {
     dxgiCaptureProc.stdout.on('data', (d) => {
       const msg = d.toString();
       if (msg.includes('READY')) {
-        resolve({ ok: true, tempPath: outPath });
+        const match = msg.match(/READY\s+([\d.]+)/);
+        const readyTime = match ? parseFloat(match[1]) : Date.now();
+        resolve({ ok: true, tempPath: outPath, readyTime });
       }
     });
 
