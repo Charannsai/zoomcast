@@ -162,8 +162,10 @@ class ZoomCastApp {
             this.firstVideoFrameTimestamp = Date.now();
             this.firstCursorSampleTimestamp = null;
 
+            const fpsSetting = parseInt(document.getElementById('fps-select')?.value) || 30;
+
             // Start Native DXGI capture (bypasses Chromium completely)
-            this.nativeRecordingResult = await window.zoomcast.startNativeRecording({ displayIdx });
+            this.nativeRecordingResult = await window.zoomcast.startNativeRecording({ displayIdx, fps: fpsSetting });
             const explicitStartTime = this.nativeRecordingResult.readyTime || Date.now();
 
             const trackResult = await window.zoomcast.startTracking({

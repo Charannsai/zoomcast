@@ -206,6 +206,7 @@ let dxgiCaptureProc = null;
 
 ipcMain.handle('start-native-recording', async (event, options) => {
   const displayIdx = options?.displayIdx || 0;
+  const fps = options?.fps || 30;
   const tmpDir = path.join(app.getPath('temp'), 'zoomcast');
   if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
   // write to mp4, python uses libx264
@@ -217,7 +218,7 @@ ipcMain.handle('start-native-recording', async (event, options) => {
 
   return new Promise((resolve) => {
     const scriptPath = path.join(__dirname, 'helpers', 'dxgi_capture.py');
-    dxgiCaptureProc = spawn('python', [scriptPath, outPath, ffmpegPath, String(displayIdx)], {
+    dxgiCaptureProc = spawn('python', [scriptPath, outPath, ffmpegPath, String(displayIdx), String(fps)], {
       stdio: ['pipe', 'pipe', 'inherit'],
     });
 
