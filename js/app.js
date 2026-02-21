@@ -56,8 +56,68 @@ class ZoomCastApp {
         window.zoomcast.onClickEvent((data) => {
             if (this.isRecording) this.clickData.push(data);
         });
-
         await this._loadSources();
+        this._bindDragAndDrop();
+    }
+
+    _bindDragAndDrop() {
+        document.body.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (this.currentScreen === 'home') document.body.style.opacity = '0.7';
+        });
+
+        document.body.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (this.currentScreen === 'home') document.body.style.opacity = '1';
+        });
+
+        document.body.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (this.currentScreen === 'home') document.body.style.opacity = '1';
+
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                const videoFile = Array.from(files).find(f => f.type.startsWith('video/'));
+                if (videoFile) {
+                    await this._loadExternalVideo(videoFile);
+                }
+            }
+        });
+    }
+
+    async _loadExternalVideo(file) {
+        this.videoBlob = file;
+        this.videoUrl = URL.createObjectURL(file);
+        this.cursorData = [];
+        this.clickData = [];
+
+        const video = document.getElementById('hidden-video');
+        video.src = this.videoUrl;
+
+        await new Promise((resolve) => {
+            video.onloadedmetadata = () => {
+                if (video.duration === Infinity || isNaN(video.duration)) {
+                    video.currentTime = 1e10;
+                    video.ontimeupdate = () => {
+                        video.ontimeupdate = null;
+                        video.currentTime = 0;
+                        resolve();
+                    };
+                } else {
+                    resolve();
+                }
+            };
+        });
+
+        this.duration = video.duration;
+        this.cuts = [];
+        this.segments = []; // manual zooms only for imported videos
+
+        this._initEditor();
+        this._showScreen('editor');
     }
 
     // ─── Window Controls ─────────────────────────────────────────

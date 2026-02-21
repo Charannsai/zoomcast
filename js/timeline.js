@@ -283,7 +283,16 @@ class Timeline {
         if (hit) {
             this._setCursor(hit.zone === 'body' ? 'grab' : 'ew-resize');
         } else if (y < this.THUMB_H) {
-            this._setCursor('pointer');
+            let onHandle = false;
+            for (const c of this.clips) {
+                const cx1 = this._tToX(c.start);
+                const cx2 = this._tToX(c.end);
+                if (Math.abs(x - cx1) <= 8 || Math.abs(x - cx2) <= 8) {
+                    onHandle = true;
+                    break;
+                }
+            }
+            this._setCursor(onHandle ? 'ew-resize' : 'pointer');
         } else {
             this._setCursor('default');
         }
