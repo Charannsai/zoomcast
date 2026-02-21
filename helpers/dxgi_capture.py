@@ -46,27 +46,47 @@ def main():
 
     def capture_loop():
         first_frame = True
-        interval = 1.0 / fps
-        next_time = time.perf_counter()
         last_frame = None
+        frames_sent = 0
+        start_time = None
         
         while running:
-            now = time.perf_counter()
-            if now >= next_time:
+            # Need to pick up the very first unblocked frame to clock ZERO.
+            if start_time is None:
                 frame = camera.grab()
                 if frame is not None:
                     last_frame = frame
+                    start_time = time.perf_counter()
+                    print(f"READY {time.time() * 1000}", flush=True)
+                    first_frame = False
                     
-                if last_frame is not None:
-                    if first_frame:
-                        # Output exactly the time the frame was acquired
-                        print(f"READY {time.time() * 1000}", flush=True)
-                        first_frame = False
                     try:
                         process.stdin.write(last_frame.tobytes())
+                        frames_sent += 1
                     except Exception:
                         break
-                next_time += interval
+                else:
+                    time.sleep(0.001)
+                continue
+            
+            now = time.perf_counter()
+            target_frames = int((now - start_time) * fps)
+            
+            if target_frames > frames_sent:
+                # We need to send frames to catch up to wall-clock time
+                frame = camera.grab()
+                if frame is not None:
+                    last_frame = frame
+                
+                if last_frame is not None:
+                    try:
+                        # Write exactly enough duplicates to lock FFmpeg timeline to physical time
+                        frames_to_write = target_frames - frames_sent
+                        for _ in range(frames_to_write):
+                            process.stdin.write(last_frame.tobytes())
+                            frames_sent += 1
+                    except Exception:
+                        break
             else:
                 time.sleep(0.001)
                     
