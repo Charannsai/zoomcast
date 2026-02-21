@@ -14,13 +14,14 @@ class Timeline {
         this.cuts = options.cuts || [];            // Array of { tStart, tEnd }
         this.playhead = 0;
         this.selectedSeg = null;
+        this.selectedClip = null;
+        this.hoverScissor = false;
         this.thumbnails = [];
 
         // Callbacks
         this.onSeek = options.onSeek || (() => { });
-        this.onSegmentSelect = options.onSegmentSelect || (() => { });
+        this.onSelectionChange = options.onSelectionChange || (() => { });
         this.onSegmentChange = options.onSegmentChange || (() => { });
-        this.onCutSelection = options.onCutSelection || (() => { }); // (selStart, selEnd) => void
 
         // Layout constants
         this.THUMB_H = 52;
@@ -29,12 +30,8 @@ class Timeline {
         this.HANDLE_W = 10;
         this.SNAP_PX = 6;
 
-        // Editor mode: 'zoom' | 'cut'
-        this.mode = 'zoom';
-
-        // Cut range selection state
-        this.cutSelection = null;  // { tStart, tEnd } or null
-        this._cutDragStart = null; // x px when drag began
+        // Video clips (splits) tracking
+        this.clips = [{ start: 0, end: this.duration, deleted: false }];
 
         this._drag = null;
         this._setupEvents();
@@ -44,14 +41,13 @@ class Timeline {
         this._resizeObs.observe(canvas.parentElement);
     }
 
-    setMode(mode) {
-        this.mode = mode;
-        if (mode === 'zoom') {
-            this.cutSelection = null;
-            this._cutDragStart = null;
-            this.onCutSelection(null, null);
+    _rebuildCutsFromClips() {
+        this.cuts = [];
+        for (const clip of this.clips) {
+            if (clip.deleted) {
+                this.cuts.push({ tStart: clip.start, tEnd: clip.end });
+            }
         }
-        this.draw();
     }
 
     _resize() {
@@ -116,24 +112,33 @@ class Timeline {
         const rect = this.canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
+        const t = this._xToT(x);
 
-        if (this.mode === 'cut') {
-            // Start dragging a cut selection range
-            this._cutDragStart = x;
-            const t = this._xToT(x);
-            this.cutSelection = { tStart: t, tEnd: t };
-            this.onCutSelection(t, t);
-            this._setCursor('col-resize');
+        if (this.hoverScissor) {
+            this._splitClipAt(this.playhead);
+            return;
+        }
+
+        // Thumbnails area click (selects a clip, moves playhead)
+        if (y < this.THUMB_H) {
+            this.playhead = t;
+            const clip = this.clips.find(c => t >= c.start && t < c.end);
+            this.selectedClip = clip || null;
+            this.selectedSeg = null;
+            this.onSelectionChange(this.selectedSeg, this.selectedClip);
+            this.onSeek(t);
+            this._drag = { type: 'seek' };
             this.draw();
             return;
         }
 
-        // Zoom mode — existing logic
+        // Zoom segment hit test
         const hit = this._hitTest(x, y);
         if (hit) {
             const { seg, zone } = hit;
             this.selectedSeg = seg;
-            this.onSegmentSelect(seg);
+            this.selectedClip = null;
+            this.onSelectionChange(this.selectedSeg, this.selectedClip);
             if (zone === 'left') {
                 this._drag = { seg, type: 'left', startX: x, origStart: seg.tStart, origEnd: seg.tEnd };
                 this._setCursor('ew-resize');
@@ -148,14 +153,26 @@ class Timeline {
             return;
         }
 
-        // Seek
+        // Empty area seek
         this.selectedSeg = null;
-        this.onSegmentSelect(null);
-        const t = this._xToT(x);
+        this.selectedClip = null;
+        this.onSelectionChange(null, null);
         this.playhead = t;
         this.onSeek(t);
         this._drag = { type: 'seek' };
         this.draw();
+    }
+
+    _splitClipAt(t) {
+        const idx = this.clips.findIndex(c => t > c.start + 0.05 && t < c.end - 0.05);
+        if (idx !== -1) {
+            const clip = this.clips[idx];
+            const newClip = { start: t, end: clip.end, deleted: clip.deleted };
+            clip.end = t;
+            this.clips.splice(idx + 1, 0, newClip);
+            this._rebuildCutsFromClips();
+            this.draw();
+        }
     }
 
     _onMouseMove(e) {
@@ -163,22 +180,18 @@ class Timeline {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
-        if (this.mode === 'cut') {
-            if (this._cutDragStart !== null) {
-                const tA = this._xToT(this._cutDragStart);
-                const tB = this._xToT(x);
-                const tStart = Math.min(tA, tB);
-                const tEnd = Math.max(tA, tB);
-                this.cutSelection = { tStart, tEnd };
-                this.onCutSelection(tStart, tEnd);
-                this.draw();
-            } else {
-                this._setCursor('col-resize');
-            }
+        const px = this._tToX(this.playhead);
+        if (Math.abs(x - px) < 14 && y < 24) {
+            this.hoverScissor = true;
+            this._setCursor('pointer'); // Will be styled to scissors in a sec, or we just draw it dynamically
+            this.draw();
             return;
+        } else if (this.hoverScissor) {
+            this.hoverScissor = false;
+            this.draw();
         }
 
-        // Zoom mode — drag logic
+        // Drag logic
         if (this._drag) {
             if (this._drag.type === 'seek') {
                 const t = this._xToT(x);
@@ -217,24 +230,14 @@ class Timeline {
         const hit = this._hitTest(x, y);
         if (hit) {
             this._setCursor(hit.zone === 'body' ? 'grab' : 'ew-resize');
+        } else if (y < this.THUMB_H) {
+            this._setCursor('pointer');
         } else {
             this._setCursor('default');
         }
     }
 
     _onMouseUp(e) {
-        if (this.mode === 'cut') {
-            // Finalize cut selection
-            if (this.cutSelection && this.cutSelection.tEnd - this.cutSelection.tStart < 0.02) {
-                // Tiny drag = deselect
-                this.cutSelection = null;
-                this.onCutSelection(null, null);
-            }
-            this._cutDragStart = null;
-            this._setCursor('col-resize');
-            this.draw();
-            return;
-        }
         if (this._drag && this._drag.type !== 'seek' && this._drag.seg) {
             this.onSegmentChange(this._drag.seg);
         }
@@ -242,7 +245,6 @@ class Timeline {
     }
 
     _onDoubleClick(e) {
-        if (this.mode === 'cut') return;
         const rect = this.canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
@@ -251,7 +253,8 @@ class Timeline {
             const mid = (hit.seg.tStart + hit.seg.tEnd) / 2;
             this.playhead = mid;
             this.selectedSeg = hit.seg;
-            this.onSegmentSelect(hit.seg);
+            this.selectedClip = null;
+            this.onSelectionChange(this.selectedSeg, this.selectedClip);
             this.onSeek(mid);
             this.draw();
         }
@@ -305,9 +308,32 @@ class Timeline {
                 ctx.drawImage(thumb.img, x, 0, thumb.w, this.THUMB_H);
                 x += thumb.w;
             }
-            // Dim overlay
+            // Dim overlay for base thumbnails
             ctx.fillStyle = 'rgba(12, 15, 22, 0.48)';
             ctx.fillRect(0, 0, W, this.THUMB_H);
+
+            // Draw clip outlines and highlight selected
+            for (const clip of this.clips) {
+                const cx1 = this._tToX(clip.start);
+                const cx2 = this._tToX(clip.end);
+                const cw = cx2 - cx1;
+
+                // Draw split marker lines
+                if (clip.start > 0) {
+                    ctx.fillStyle = '#1e1e1e';
+                    ctx.fillRect(cx1 - 2, 0, 4, this.THUMB_H);
+                    ctx.fillStyle = '#f5a623';
+                    ctx.fillRect(cx1 - 1, 0, 2, this.THUMB_H);
+                }
+
+                if (clip === this.selectedClip) {
+                    ctx.strokeStyle = '#f5a623';
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(cx1 + 1.5, 1.5, cw - 3, this.THUMB_H - 3);
+                    ctx.fillStyle = 'rgba(245, 166, 35, 0.1)';
+                    ctx.fillRect(cx1, 0, cw, this.THUMB_H);
+                }
+            }
         }
 
         // Separator
@@ -338,17 +364,11 @@ class Timeline {
             this._drawSegment(ctx, seg);
         }
 
-        // Committed cut zones
+        // Committed cut zones (deleted clips)
         this._drawCutZones(ctx, W, H);
 
-        // Live cut selection while dragging (in cut mode)
-        if (this.mode === 'cut' && this.cutSelection &&
-            this.cutSelection.tEnd - this.cutSelection.tStart > 0.005) {
-            this._drawSelectionRange(ctx, W, H);
-        }
-
         // Snap guides (zoom mode)
-        if (this.mode === 'zoom' && this._drag && this._drag.seg) {
+        if (this._drag && this._drag.seg) {
             this._drawSnapGuides(ctx);
         }
 
@@ -370,74 +390,29 @@ class Timeline {
         ctx.fillText(this._formatTime(this.playhead), px, H - 4);
         ctx.textAlign = 'start';
 
-        // Cut mode hint
-        if (this.mode === 'cut' && !this.cutSelection) {
-            ctx.fillStyle = 'rgba(232, 67, 147, 0.55)';
-            ctx.font = 'bold 11px Inter, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('← Drag to select a range to cut →', W / 2, H / 2 + 4);
-            ctx.textAlign = 'start';
-        }
-    }
-
-    // ─── Selection Range (live drag in cut mode) ───────────────────────
-    _drawSelectionRange(ctx, W, H) {
-        const { tStart, tEnd } = this.cutSelection;
-        const x1 = this._tToX(tStart);
-        const x2 = this._tToX(tEnd);
-        const w = Math.max(x2 - x1, 2);
-
-        // Main fill
-        ctx.fillStyle = 'rgba(232, 67, 147, 0.18)';
-        ctx.fillRect(x1, 0, w, H);
-
-        // Hatched stripes
+        // Scissor Cutter on Playhead
         ctx.save();
+        ctx.translate(px, 12);
+
+        // Background handle circle/box
+        ctx.fillStyle = this.hoverScissor ? '#e84393' : '#333';
         ctx.beginPath();
-        ctx.rect(x1, 0, w, H);
-        ctx.clip();
-        ctx.strokeStyle = 'rgba(232, 67, 147, 0.3)';
+        ctx.arc(0, 0, 10, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
         ctx.lineWidth = 1;
-        for (let i = -H; i < w + H; i += 7) {
-            ctx.beginPath();
-            ctx.moveTo(x1 + i, 0);
-            ctx.lineTo(x1 + i + H, H);
-            ctx.stroke();
-        }
+        ctx.stroke();
+
+        // Scissor Icon
+        ctx.fillStyle = '#fff';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('✂', 0, 0);
         ctx.restore();
-
-        // Edge lines
-        ctx.strokeStyle = 'rgba(232, 67, 147, 0.9)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([]);
-        ctx.beginPath(); ctx.moveTo(x1, 0); ctx.lineTo(x1, H); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(x2, 0); ctx.lineTo(x2, H); ctx.stroke();
-
-        // Handle grips on edges
-        const gripH = 20;
-        const gripY = (H - gripH) / 2;
-        ctx.fillStyle = 'rgba(232, 67, 147, 0.85)';
-        this._roundRectFill(ctx, x1 - 3, gripY, 6, gripH, 3);
-        this._roundRectFill(ctx, x2 - 3, gripY, 6, gripH, 3);
-
-        // Duration badge in center
-        if (w > 60) {
-            const dur = (tEnd - tStart).toFixed(2) + 's';
-            const label = '✂ ' + dur;
-            ctx.font = 'bold 11px Inter, sans-serif';
-            const tw = ctx.measureText(label).width + 16;
-            const bx = x1 + w / 2 - tw / 2;
-            const by = H / 2 - 10;
-            // Badge bg
-            ctx.fillStyle = 'rgba(232, 67, 147, 0.92)';
-            this._roundRectFill(ctx, bx, by, tw, 20, 10);
-            // Badge text
-            ctx.fillStyle = 'white';
-            ctx.textAlign = 'center';
-            ctx.fillText(label, x1 + w / 2, by + 14);
-            ctx.textAlign = 'start';
-        }
     }
+
+
 
     // ─── Committed Cut Zones ──────────────────────────────────────────
     _drawCutZones(ctx, W, H) {
