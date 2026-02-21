@@ -375,7 +375,14 @@ class ZoomCastApp {
     }
 
     async _seek(t) {
-        this.playhead = Math.max(0, Math.min(this.duration, t));
+        let skipTo = t;
+        for (const cut of this.cuts) {
+            if (skipTo >= cut.tStart && skipTo < cut.tEnd - 0.05) {
+                skipTo = cut.tEnd;
+            }
+        }
+
+        this.playhead = Math.max(0, Math.min(this.duration, skipTo));
         if (this.timeline) {
             this.timeline.playhead = this.playhead;
             this.timeline.draw();
@@ -485,7 +492,17 @@ class ZoomCastApp {
 
         const drawLoop = () => {
             if (!this.isPlaying) return;
-            this.playhead = video.currentTime;
+
+            let curT = video.currentTime;
+            for (const cut of this.cuts) {
+                // If playhead enters a deleted cut zone, jump to the end of it
+                if (curT >= cut.tStart && curT < cut.tEnd - 0.05) {
+                    curT = cut.tEnd;
+                    video.currentTime = curT + 0.01; // nudge slightly past to prevent loop
+                }
+            }
+
+            this.playhead = curT;
             if (this.playhead >= this.duration) {
                 this._stopPlayback();
                 return;

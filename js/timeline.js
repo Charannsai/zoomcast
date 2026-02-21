@@ -123,6 +123,7 @@ class Timeline {
         if (y < this.THUMB_H) {
             // 1. Check clip edges first (trim handles)
             for (const c of this.clips) {
+                if (c.deleted) continue;
                 const cx1 = this._tToX(c.start);
                 const cx2 = this._tToX(c.end);
 
@@ -146,7 +147,7 @@ class Timeline {
 
             // 2. Otherwise select clip or seek
             this.playhead = t;
-            const clip = this.clips.find(c => t >= c.start && t < c.end);
+            const clip = this.clips.find(c => t >= c.start && t < c.end && !c.deleted);
             this.selectedClip = clip || null;
             this.selectedSeg = null;
             this.onSelectionChange(this.selectedSeg, this.selectedClip);
@@ -285,6 +286,7 @@ class Timeline {
         } else if (y < this.THUMB_H) {
             let onHandle = false;
             for (const c of this.clips) {
+                if (c.deleted) continue;
                 const cx1 = this._tToX(c.start);
                 const cx2 = this._tToX(c.end);
                 if (Math.abs(x - cx1) <= 8 || Math.abs(x - cx2) <= 8) {
@@ -376,6 +378,7 @@ class Timeline {
 
             // Draw clip outlines and highlight selected
             for (const clip of this.clips) {
+                if (clip.deleted) continue;
                 const cx1 = this._tToX(clip.start);
                 const cx2 = this._tToX(clip.end);
                 const cw = cx2 - cx1;
