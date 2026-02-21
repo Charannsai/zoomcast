@@ -208,7 +208,7 @@ class ZoomEngine {
         ctx.imageSmoothingQuality = 'high';
 
         // ── 1. Background ──────────────────────────────────────────
-        this._drawBackground(ctx, cw, ch, bgType, bgColor, bgColor2);
+        this._drawBackground(ctx, cw, ch, bgType, bgColor, bgColor2, config.bgImage);
 
         // ── 2. Resolve manual zoom state ──────────────────────────
         let zoom = this.getZoomAt(t, segments, panSpeed);
@@ -451,7 +451,20 @@ class ZoomEngine {
     }
 
     // ── Background Drawing ──
-    static _drawBackground(ctx, cw, ch, bgType, bgColor, bgColor2) {
+    static _drawBackground(ctx, cw, ch, bgType, bgColor, bgColor2, bgImage) {
+        if (bgType === 'image' && bgImage) {
+            // object-fit: cover logic
+            const imgW = bgImage.width || 1;
+            const imgH = bgImage.height || 1;
+            const scale = Math.max(cw / imgW, ch / imgH);
+            const w = imgW * scale;
+            const h = imgH * scale;
+            const x = (cw - w) / 2;
+            const y = (ch - h) / 2;
+            ctx.drawImage(bgImage, x, y, w, h);
+            return;
+        }
+
         if (bgType === 'gradient') {
             const grad = ctx.createLinearGradient(0, 0, cw, ch);
             grad.addColorStop(0, bgColor);

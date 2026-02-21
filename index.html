@@ -352,12 +352,21 @@
                                         <option value="solid">Solid</option>
                                         <option value="gradient" selected>Gradient</option>
                                         <option value="radial">Radial</option>
+                                        <option value="image">Image</option>
                                     </select>
                                 </div>
                             </div>
-                            <div class="prop-row">
+                            <div class="prop-row" id="bg-color2-row">
                                 <label class="prop-label">Gradient End</label>
                                 <input type="color" id="bg-color2" value="#111111" class="color-input">
+                            </div>
+                            <div class="prop-row" id="bg-image-row" style="display: none;">
+                                <label class="prop-label">Upload Image</label>
+                                <button class="btn btn-secondary"
+                                    onclick="document.getElementById('bg-image-upload').click()"
+                                    style="width: 100%; font-size: 13px; font-weight: 500; height: 32px; background: rgba(255, 255, 255, 0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">Browse
+                                    File...</button>
+                                <input type="file" id="bg-image-upload" accept="image/*" style="display: none;">
                             </div>
                             <div class="prop-row">
                                 <label class="prop-label">Padding</label>

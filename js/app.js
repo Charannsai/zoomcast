@@ -757,6 +757,38 @@ class ZoomCastApp {
             if (el) el.addEventListener('change', update);
         });
 
+        const bgTypeSelect = document.getElementById('bg-type');
+        const bgImageRow = document.getElementById('bg-image-row');
+        const bgColor2Row = document.getElementById('bg-color2-row');
+        const bgImageUpload = document.getElementById('bg-image-upload');
+
+        if (bgTypeSelect && bgImageRow) {
+            bgTypeSelect.addEventListener('change', (e) => {
+                const isImg = e.target.value === 'image';
+                const isSolid = e.target.value === 'solid';
+                bgImageRow.style.display = isImg ? 'flex' : 'none';
+                if (bgColor2Row) bgColor2Row.style.display = (isImg || isSolid) ? 'none' : 'flex';
+                update();
+            });
+        }
+
+        if (bgImageUpload) {
+            bgImageUpload.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        this.bgImageNode = img;
+                        update();
+                    };
+                    img.src = ev.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
         const rangeMap = {
             'padding-slider': 'padding-value',
             'corners-slider': 'corners-value',
@@ -839,6 +871,7 @@ class ZoomCastApp {
             bgColor: document.getElementById('bg-color')?.value || '#1a1a1a',
             bgColor2: document.getElementById('bg-color2')?.value || '#111111',
             bgType: document.getElementById('bg-type')?.value || 'gradient',
+            bgImage: this.bgImageNode || null,
             cursorSize: parseFloat(document.getElementById('cursor-size-slider')?.value || 1.2),
             cursorStyle: this.cursorStyle || 'style1',
             clickEffects: document.getElementById('click-effects-toggle')?.checked ?? true,
