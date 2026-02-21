@@ -134,12 +134,11 @@ ipcMain.handle('start-tracking', (event, payload) => {
   const bw = displayBounds?.width || 1920;
   const bh = displayBounds?.height || 1080;
 
-  // DXGI captures physical pixels, but Electron's `getCursorScreenPoint()` returns logic ones.
-  // We MUST scale the display bounds to determine exactly correct cursor offset ratios.
-  const sw = bw / scaleFactor;
-  const sh = bh / scaleFactor;
-  const sBx = bx / scaleFactor;
-  const sBy = by / scaleFactor;
+  // DXGI captures physical pixels, but it spans exactly the bounds array as logical mapped.
+  const sw = bw;
+  const sh = bh;
+  const sBx = bx;
+  const sBy = by;
 
   // Poll cursor position at 120Hz for ultra-smooth, accurate tracking
   cursorInterval = setInterval(() => {
