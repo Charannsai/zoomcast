@@ -40,53 +40,68 @@ def main():
     # Start ffmpeg encoder
     process = subprocess.Popen(ffmpeg_args, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
     
-    # We use camera.start(video_mode=True). DXCam spins up a native 
-    # highly accurate background thread to guarantee strict 60FPS 
-    # frame intervals, completely bypassing Python's terrible sleep() latency.
-    camera.start(target_fps=fps, video_mode=True)
+    # We will manually grab frames in a fast background thread, 
+    # and use a strict wall-clock writer to feed FFmpeg perfectly.
     
     running = True
 
-    import queue
-    frame_queue = queue.Queue(maxsize=300)
+    # Shared state
+    latest_frame = None
+    frame_lock = threading.Lock()
     
-    def process_loop():
-        first_frame = True
+    def grab_loop():
+        nonlocal latest_frame
         while running:
-            # Blocks precisely until the next 1/60th second frame is ready
-            # Returns exactly 60 duplicated or new frames per second.
-            f = camera.get_latest_frame()
-            if f is None:
-                # Should not happen in video_mode=True, but safety fallback.
-                time.sleep(0.001)
-                continue
-                
-            if first_frame:
-                print(f"READY {time.time() * 1000}", flush=True)
-                first_frame = False
-                
-            try:
-                # Put to queue instantly so FFmpeg pipe lag never stalls the DXCam loop
-                frame_queue.put_nowait(f)
-            except queue.Full:
-                pass # Drop frame only if FFmpeg is completely deadlocked >5s behind
+            f = camera.grab()
+            if f is not None:
+                with frame_lock:
+                    latest_frame = f
+            else:
+                time.sleep(0.002)
 
-    def ffmpeg_loop():
+    def write_loop():
+        nonlocal latest_frame
+        
+        # Wait for the first frame
+        while latest_frame is None and running:
+            time.sleep(0.005)
+            
+        if not running: return
+        
+        print(f"READY {time.time() * 1000}", flush=True)
+        start_time = time.perf_counter()
+        frames_sent = 0
+        
         while running:
-            try:
-                # Get frames in sequential order from queue
-                f = frame_queue.get(timeout=0.1)
-                process.stdin.write(f.tobytes())
-            except queue.Empty:
-                continue
-            except Exception:
-                break
+            now = time.perf_counter()
+            target_frames = int((now - start_time) * fps)
+            
+            if target_frames > frames_sent:
+                frames_to_write = target_frames - frames_sent
                 
-    t_proc = threading.Thread(target=process_loop, daemon=True)
-    t_ffmpeg = threading.Thread(target=ffmpeg_loop, daemon=True)
+                with frame_lock:
+                    f = latest_frame
+                
+                if f is not None:
+                    # Write directly to FFmpeg. If FFmpeg lags, this blocks.
+                    # When it unblocks, target_frames will be larger, and it will
+                    # catch up by writing the CURRENT frame multiple times!
+                    for _ in range(frames_to_write):
+                        try:
+                            process.stdin.write(f.tobytes())
+                            frames_sent += 1
+                        except Exception:
+                            # Broken pipe, FFmpeg died
+                            break
+            else:
+                # Sleep tiny amount to prevent high CPU usage when ahead of time
+                time.sleep(0.001)
+                
+    t_grab = threading.Thread(target=grab_loop, daemon=True)
+    t_write = threading.Thread(target=write_loop, daemon=True)
     
-    t_proc.start()
-    t_ffmpeg.start()
+    t_grab.start()
+    t_write.start()
     
     # Wait for STOP signal from Node.js (via stdin or simply closing stdin)
     try:
@@ -97,8 +112,8 @@ def main():
         pass
         
     running = False
-    camera.stop()
     
+    # Terminate properly to flush FFmpeg buffers
     if process.stdin:
         process.stdin.close()
     

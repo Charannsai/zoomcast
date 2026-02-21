@@ -74,7 +74,6 @@ app.whenReady().then(() => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   stopCursorTracking();
-  hideCursorHideOverlay();
 });
 
 app.on('window-all-closed', () => {
