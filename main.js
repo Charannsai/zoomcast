@@ -122,7 +122,7 @@ ipcMain.handle('get-displays', () => {
 ipcMain.handle('start-tracking', (event, payload) => {
   cursorData = [];
   clickData = [];
-  recordingStartTime = Date.now();
+  recordingStartTime = payload?.startTime || Date.now();
   isRecording = true;
 
   // payload can be { bounds, scaleFactor } (new) or plain bounds object (legacy)

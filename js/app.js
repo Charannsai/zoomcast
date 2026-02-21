@@ -164,12 +164,14 @@ class ZoomCastApp {
 
             // Start Native DXGI capture (bypasses Chromium completely)
             this.nativeRecordingResult = await window.zoomcast.startNativeRecording({ displayIdx });
+            const explicitStartTime = this.nativeRecordingResult.readyTime || Date.now();
 
             const trackResult = await window.zoomcast.startTracking({
                 bounds: this.displayBounds,
                 scaleFactor: this.displayScaleFactor,
+                startTime: explicitStartTime
             });
-            this.firstCursorSampleTimestamp = trackResult.startTime || Date.now();
+            this.firstCursorSampleTimestamp = trackResult.startTime || explicitStartTime;
 
             document.getElementById('recording-overlay').classList.remove('hidden');
             this.timerInterval = setInterval(() => this._updateTimer(), 50);
@@ -371,17 +373,24 @@ class ZoomCastApp {
         const srcH = video.videoHeight || 1080;
         const aspect = srcW / srcH;
 
-        // Fit inside available box, preserving aspect ratio
-        let cw, ch;
-        if (maxW / maxH > aspect) {
-            // Too wide — constrain by height
-            ch = Math.floor(maxH);
-            cw = Math.floor(ch * aspect);
+        const config = this._getConfig();
+        const padding = config.padding !== undefined ? config.padding : 48;
+
+        const maxVidW = Math.max(1, maxW - padding * 2);
+        const maxVidH = Math.max(1, maxH - padding * 2);
+
+        // Fit video area inside mathematically available padded box
+        let vidW, vidH;
+        if (maxVidW / maxVidH > aspect) {
+            vidH = Math.floor(maxVidH);
+            vidW = Math.floor(vidH * aspect);
         } else {
-            // Too tall — constrain by width
-            cw = Math.floor(maxW);
-            ch = Math.floor(cw / aspect);
+            vidW = Math.floor(maxVidW);
+            vidH = Math.floor(vidW / aspect);
         }
+
+        let cw = vidW + padding * 2;
+        let ch = vidH + padding * 2;
 
         // Ensure even numbers (better for video codecs)
         cw = cw & ~1 || 2;
@@ -397,7 +406,7 @@ class ZoomCastApp {
         }
         this.previewCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-        const config = this._getConfig();
+        // config initialized above
         config.outWidth = cw;
         config.outHeight = ch;
         config.cursorData = document.getElementById('cursor-toggle')?.checked ? this.cursorData : null;
@@ -906,10 +915,17 @@ class ZoomCastApp {
             pct.textContent = '3%';
 
             const video = document.getElementById('hidden-video');
-            const fps = 30;
-            const vw = video.videoWidth || 1920;
-            const vh = video.videoHeight || 1080;
+            const config = this._getConfig();
+            const padding = config.padding !== undefined ? config.padding : 48;
 
+            const srcW = video.videoWidth || 1920;
+            const srcH = video.videoHeight || 1080;
+
+            const fps = 30;
+
+            // Add padding * 2 to the true raw video dimensions so the inner video area is untouched
+            const vw = (srcW + padding * 2) & ~1 || 2;
+            const vh = (srcH + padding * 2) & ~1 || 2;
             // Build list of frame timestamps (excluding cut zones)
             const allFrames = [];
             const totalRawFrames = Math.ceil(this.duration * fps);
@@ -926,9 +942,6 @@ class ZoomCastApp {
             exportCanvas.height = vh;
             const exportCtx = exportCanvas.getContext('2d', { willReadFrequently: true });
             exportCtx.imageSmoothingEnabled = true;
-            exportCtx.imageSmoothingQuality = 'high';
-
-            const config = this._getConfig();
             config.outWidth = vw;
             config.outHeight = vh;
             config.cursorData = this.cursorData;
