@@ -40,8 +40,7 @@ def main():
     # Start ffmpeg encoder
     process = subprocess.Popen(ffmpeg_args, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
     
-    # Do not rely on DXCAM's internal video_mode timer, it drops frames.
-    camera.start(target_fps=fps, video_mode=False)
+    # We DO NOT use camera.start(). We will manually grab() to perfectly lock framerates.
     
     running = True
 
@@ -51,12 +50,10 @@ def main():
         next_time = time.perf_counter()
         last_frame = None
         
-        # Poll dxcam as fast as possible for the absolute newest frame
         while running:
             now = time.perf_counter()
             if now >= next_time:
-                # At this exact wall-clock moment, we MUST push a frame to ffmpeg
-                frame = camera.get_latest_frame()
+                frame = camera.grab()
                 if frame is not None:
                     last_frame = frame
                     
@@ -85,7 +82,9 @@ def main():
         pass
         
     running = False
-    camera.stop()
+    
+    # We didn't use camera.start(), so we don't need camera.stop()
+    # just close the processes.
     if process.stdin:
         process.stdin.close()
     
