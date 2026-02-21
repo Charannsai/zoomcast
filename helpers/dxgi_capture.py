@@ -40,80 +40,70 @@ def main():
     # Start ffmpeg encoder
     process = subprocess.Popen(ffmpeg_args, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
     
-    # We will manually grab frames in a fast background thread, 
-    # and use a strict wall-clock writer to feed FFmpeg perfectly.
+    camera.start(target_fps=fps, video_mode=True)
     
+    first_frame = True
+    start_time = None
+    frames_sent = 0
     running = True
 
-    # Shared state
-    latest_frame = None
-    frame_lock = threading.Lock()
-    
-    def grab_loop():
-        nonlocal latest_frame
-        while running:
-            f = camera.grab()
-            if f is not None:
-                with frame_lock:
-                    latest_frame = f
-            else:
-                time.sleep(0.002)
+    def listen_stdin():
+        nonlocal running
+        try:
+            for line in sys.stdin:
+                if line.strip() == "STOP":
+                    running = False
+                    break
+        except Exception:
+            running = False
 
-    def write_loop():
-        nonlocal latest_frame
-        
-        # Wait for the first frame
-        while latest_frame is None and running:
-            time.sleep(0.005)
-            
-        if not running: return
-        
-        print(f"READY {time.time() * 1000}", flush=True)
-        start_time = time.perf_counter()
-        frames_sent = 0
-        
+    t_listener = threading.Thread(target=listen_stdin, daemon=True)
+    t_listener.start()
+    
+    # We will poll `get_latest_frame()` which native-blocks until exactly 1/60th sec.
+    # It guarantees no stutter. However, if FFmpeg stutters, we just push exactly 
+    # the amount of lost frames to catch up.
+    
+    try:
         while running:
+            f = camera.get_latest_frame()
+            if f is None:
+                # Fallback safety if the renderer skips
+                continue
+                
+            if first_frame:
+                start_time = time.perf_counter()
+                print(f"READY {time.time() * 1000}", flush=True)
+                first_frame = False
+            
+            # The exact number of frames that SHOULD have been written by now
             now = time.perf_counter()
             target_frames = int((now - start_time) * fps)
             
-            if target_frames > frames_sent:
-                frames_to_write = target_frames - frames_sent
-                
-                with frame_lock:
-                    f = latest_frame
-                
-                if f is not None:
-                    # Write directly to FFmpeg. If FFmpeg lags, this blocks.
-                    # When it unblocks, target_frames will be larger, and it will
-                    # catch up by writing the CURRENT frame multiple times!
-                    for _ in range(frames_to_write):
-                        try:
-                            process.stdin.write(f.tobytes())
-                            frames_sent += 1
-                        except Exception:
-                            # Broken pipe, FFmpeg died
-                            break
-            else:
-                # Sleep tiny amount to prevent high CPU usage when ahead of time
-                time.sleep(0.001)
-                
-    t_grab = threading.Thread(target=grab_loop, daemon=True)
-    t_write = threading.Thread(target=write_loop, daemon=True)
-    
-    t_grab.start()
-    t_write.start()
-    
-    # Wait for STOP signal from Node.js (via stdin or simply closing stdin)
-    try:
-        for line in sys.stdin:
-            if line.strip() == "STOP":
-                break
+            # Usually frames_to_write is 1. If FFmpeg lags, it might be 2 or 3.
+            # If our loop is running faster than physical time (impossible with get_latest_frame, but safe), it's 0.
+            frames_to_write = max(0, target_frames - frames_sent)
+            
+            if frames_to_write > 0:
+                # Convert only once to save CPU
+                f_bytes = f.tobytes()
+                for _ in range(frames_to_write):
+                    try:
+                        process.stdin.write(f_bytes)
+                        frames_sent += 1
+                    except Exception:
+                        break # FFmpeg closed
+
+            # Process STDIN to catch the FAST STOP signal from JS
+            # (select/poll on stdin is not safe in windows, so we relies on closing the pipe)
+            
     except KeyboardInterrupt:
         pass
+    except Exception as e:
+        pass
         
-    running = False
+    camera.stop()
     
-    # Terminate properly to flush FFmpeg buffers
     if process.stdin:
         process.stdin.close()
     
