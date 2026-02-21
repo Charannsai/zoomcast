@@ -49,6 +49,7 @@ def main():
         first_frame = True
         interval = 1.0 / fps
         next_time = time.perf_counter()
+        last_frame = None
         
         # Poll dxcam as fast as possible for the absolute newest frame
         while running:
@@ -57,12 +58,15 @@ def main():
                 # At this exact wall-clock moment, we MUST push a frame to ffmpeg
                 frame = camera.get_latest_frame()
                 if frame is not None:
+                    last_frame = frame
+                    
+                if last_frame is not None:
                     if first_frame:
                         # Output exactly the time the frame was acquired
                         print(f"READY {time.time() * 1000}", flush=True)
                         first_frame = False
                     try:
-                        process.stdin.write(frame.tobytes())
+                        process.stdin.write(last_frame.tobytes())
                     except Exception:
                         break
                 next_time += interval

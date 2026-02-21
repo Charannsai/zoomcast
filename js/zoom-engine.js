@@ -433,7 +433,6 @@ class ZoomEngine {
             const pos = this._mapToScreen(prevCursor.x, prevCursor.y, factor, cx, cy, sx, sy, sw, sh);
             if (!pos) continue;
             ctx.save();
-            ctx.setTransform(1, 0, 0, 1, 0, 0); // screen space
             ctx.globalAlpha = s.alpha;
             this._drawImageCursor(ctx, pos.x, pos.y, cursorSize, cursorStyle, type);
             ctx.restore();
@@ -445,7 +444,6 @@ class ZoomEngine {
             const pos = this._mapToScreen(cursor.x, cursor.y, factor, cx, cy, sx, sy, sw, sh);
             if (pos) {
                 ctx.save();
-                ctx.setTransform(1, 0, 0, 1, 0, 0);
                 this._drawImageCursor(ctx, pos.x, pos.y, cursorSize, cursorStyle, type);
                 ctx.restore();
             }
