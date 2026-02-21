@@ -680,7 +680,7 @@ class ZoomCastApp {
         }
 
         document.getElementById('seg-btn-duplicate').onclick = () => this._duplicateSelectedZoom();
-        document.getElementById('seg-btn-delete').onclick = () => this._deleteSelectedZoom();
+        document.getElementById('seg-btn-delete').onclick = () => this._deleteSelected();
     }
 
     // ─── Appearance Controls ─────────────────────────────────────
