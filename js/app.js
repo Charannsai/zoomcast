@@ -876,6 +876,7 @@ class ZoomCastApp {
       <span class="meta-chip">🖱️ ${this.clickData.length} clicks</span>
     `;
 
+        document.querySelector('.export-card').classList.remove('hidden');
         document.getElementById('export-progress-section').classList.add('hidden');
         document.getElementById('export-complete').classList.add('hidden');
 
@@ -1011,6 +1012,7 @@ class ZoomCastApp {
             text.textContent = 'Complete!';
 
             document.getElementById('export-complete').classList.remove('hidden');
+            document.querySelector('.export-card').classList.add('hidden');
             document.getElementById('export-complete-path').textContent = outputPath;
             document.getElementById('btn-open-folder').onclick = () => window.zoomcast.showInFolder(outputPath);
             document.getElementById('btn-new-recording').onclick = () => {
