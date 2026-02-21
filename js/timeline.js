@@ -42,7 +42,7 @@ class Timeline {
     }
 
     _rebuildCutsFromClips() {
-        this.cuts = [];
+        this.cuts.length = 0;
         for (const clip of this.clips) {
             if (clip.deleted) {
                 this.cuts.push({ tStart: clip.start, tEnd: clip.end });
@@ -120,7 +120,31 @@ class Timeline {
         }
 
         // Thumbnails area click (selects a clip, checks handles, moves playhead)
-        if (y < this.THUMB_H) {
+        if (y < this.THUMB_H + 10) {
+            // Check Restore Buttons on Cut Zones
+            for (const cut of this.cuts) {
+                const cx1 = this._tToX(cut.tStart);
+                const cx2 = this._tToX(cut.tEnd);
+                const w = cx2 - cx1;
+                const btnW = 75, btnH = 26;
+                if (w > btnW + 10) {
+                    const bx = cx1 + w / 2 - btnW / 2;
+                    const by = this.THUMB_H / 2 - btnH / 2;
+                    if (x >= bx && x <= bx + btnW && y >= by && y <= by + btnH) {
+                        const clip = this.clips.find(c => c.start === cut.tStart && c.end === cut.tEnd);
+                        if (clip) {
+                            clip.deleted = false;
+                            this.selectedClip = clip;
+                            this.selectedSeg = null;
+                            this._rebuildCutsFromClips();
+                            this.onSelectionChange(this.selectedSeg, this.selectedClip);
+                            this.draw();
+                            return;
+                        }
+                    }
+                }
+            }
+
             // 1. Check clip edges first (trim handles)
             for (const c of this.clips) {
                 if (c.deleted) continue;
@@ -204,16 +228,25 @@ class Timeline {
         const rect = this.canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
+        this._mouseX = x;
+        this._mouseY = y;
 
         const px = this._tToX(this.playhead);
-        if (Math.abs(x - px) < 14 && y < 24) {
+        this.ctx.font = '11px Inter, sans-serif';
+        const tw = this.ctx.measureText("✂ Split").width + 16;
+
+        if (x >= px - tw / 2 && x <= px + tw / 2 && y >= 4 && y <= 26) {
             this.hoverScissor = true;
-            this._setCursor('pointer'); // Will be styled to scissors in a sec, or we just draw it dynamically
+            this._setCursor('pointer');
             this.draw();
             return;
         } else if (this.hoverScissor) {
             this.hoverScissor = false;
             this.draw();
+        }
+
+        if (y < this.THUMB_H) {
+            this.draw(); // Update hover state for restore buttons
         }
 
         // Drag logic
@@ -383,20 +416,31 @@ class Timeline {
                 const cx2 = this._tToX(clip.end);
                 const cw = cx2 - cx1;
 
-                // Draw split marker lines
-                if (clip.start > 0) {
-                    ctx.fillStyle = '#1e1e1e';
-                    ctx.fillRect(cx1 - 2, 0, 4, this.THUMB_H);
-                    ctx.fillStyle = '#f5a623';
-                    ctx.fillRect(cx1 - 1, 0, 2, this.THUMB_H);
+                if (clip === this.selectedClip) {
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(cx1 + 1, 1, cw - 2, this.THUMB_H - 2);
+
+                    ctx.fillStyle = '#ffffff';
+                    this._roundRectFill(ctx, cx1, 0, 8, this.THUMB_H, 4);
+                    this._roundRectFill(ctx, cx2 - 8, 0, 8, this.THUMB_H, 4);
+
+                    ctx.fillStyle = '#1e293b';
+                    ctx.fillRect(cx1 + 3, this.THUMB_H / 2 - 6, 2, 12);
+                    ctx.fillRect(cx2 - 5, this.THUMB_H / 2 - 6, 2, 12);
+
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+                    ctx.fillRect(cx1, 0, cw, this.THUMB_H);
+                } else {
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+                    ctx.fillRect(cx1, 0, cw, this.THUMB_H);
                 }
 
-                if (clip === this.selectedClip) {
-                    ctx.strokeStyle = '#f5a623';
-                    ctx.lineWidth = 3;
-                    ctx.strokeRect(cx1 + 1.5, 1.5, cw - 3, this.THUMB_H - 3);
-                    ctx.fillStyle = 'rgba(245, 166, 35, 0.1)';
-                    ctx.fillRect(cx1, 0, cw, this.THUMB_H);
+                if (clip.start > 0) {
+                    ctx.fillStyle = '#0f1115';
+                    ctx.fillRect(cx1 - 2, 0, 4, this.THUMB_H);
+                    ctx.fillStyle = '#475569';
+                    ctx.fillRect(cx1 - 1, 0, 2, this.THUMB_H);
                 }
             }
         }
@@ -455,25 +499,24 @@ class Timeline {
         ctx.fillText(this._formatTime(this.playhead), px, H - 4);
         ctx.textAlign = 'start';
 
-        // Scissor Cutter on Playhead
+        // Split Button on Playhead
         ctx.save();
-        ctx.translate(px, 12);
+        const splitText = "✂ Split";
+        ctx.font = '11px Inter, sans-serif';
+        const tw = ctx.measureText(splitText).width + 16;
+        const th = 22;
+        ctx.translate(px - tw / 2, 4);
 
-        // Background handle circle/box
-        ctx.fillStyle = this.hoverScissor ? '#e84393' : '#333';
-        ctx.beginPath();
-        ctx.arc(0, 0, 10, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#fff';
+        ctx.fillStyle = this.hoverScissor ? '#3b82f6' : '#1e293b';
+        this._roundRectFill(ctx, 0, 0, tw, th, th / 2);
+        ctx.strokeStyle = '#3b82f6';
         ctx.lineWidth = 1;
-        ctx.stroke();
+        this._roundRectStroke(ctx, 0, 0, tw, th, th / 2);
 
-        // Scissor Icon
-        ctx.fillStyle = '#fff';
-        ctx.font = '12px sans-serif';
+        ctx.fillStyle = '#ffffff';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('✂', 0, 0);
+        ctx.fillText(splitText, tw / 2, th / 2);
         ctx.restore();
     }
 
@@ -485,37 +528,51 @@ class Timeline {
         for (const cut of this.cuts) {
             const x1 = this._tToX(cut.tStart);
             const x2 = this._tToX(cut.tEnd);
-            const w = Math.max(x2 - x1, 3);
+            const w = Math.max(x2 - x1, 1);
 
-            ctx.fillStyle = 'rgba(180, 40, 100, 0.25)';
-            ctx.fillRect(x1, 0, w, H);
+            // Hide the thumbnail beneath it completely
+            ctx.fillStyle = '#0f1115';
+            ctx.fillRect(x1, 0, w, this.THUMB_H + 2); // overlap slightly into track to hide border
 
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(x1, 0, w, H);
-            ctx.clip();
-            ctx.strokeStyle = 'rgba(200, 50, 110, 0.35)';
-            ctx.lineWidth = 1;
-            for (let i = -H; i < w + H; i += 6) {
+            if (w > 25) {
+                // Subtle slashed background for deleted zone
+                ctx.save();
                 ctx.beginPath();
-                ctx.moveTo(x1 + i, 0);
-                ctx.lineTo(x1 + i + H, H);
-                ctx.stroke();
-            }
-            ctx.restore();
+                ctx.rect(x1, 0, w, this.THUMB_H);
+                ctx.clip();
+                ctx.strokeStyle = '#1a1d24';
+                ctx.lineWidth = 2;
+                for (let i = -this.THUMB_H; i < w + this.THUMB_H; i += 8) {
+                    ctx.beginPath();
+                    ctx.moveTo(x1 + i, 0);
+                    ctx.lineTo(x1 + i + this.THUMB_H, this.THUMB_H);
+                    ctx.stroke();
+                }
+                ctx.restore();
 
-            ctx.fillStyle = 'rgba(220, 60, 120, 0.85)';
-            ctx.fillRect(x1, 0, 2, H);
-            ctx.fillRect(x2 - 2, 0, 2, H);
+                // Draw a small "Restore" button
+                const btnW = 75, btnH = 26;
+                if (w > btnW + 10) {
+                    const bx = x1 + w / 2 - btnW / 2;
+                    const by = this.THUMB_H / 2 - btnH / 2;
 
-            if (w > 16) {
-                ctx.font = '12px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText('✂', x1 + w / 2, H / 2);
-                ctx.textAlign = 'start';
-                ctx.textBaseline = 'alphabetic';
+                    const isHovered = (this._mouseX >= bx && this._mouseX <= bx + btnW &&
+                        this._mouseY >= by && this._mouseY <= by + btnH);
+
+                    ctx.fillStyle = isHovered ? '#3b82f6' : '#1e293b';
+                    this._roundRectFill(ctx, bx, by, btnW, btnH, 4);
+
+                    ctx.fillStyle = isHovered ? '#ffffff' : '#94a3b8';
+                    ctx.font = '11px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('↺ Restore', bx + btnW / 2, by + btnH / 2);
+                    ctx.textAlign = 'start';
+                }
             }
+            // Just empty track gap for the main track below thumbnail
+            ctx.fillStyle = 'rgba(15,17,21,0.6)';
+            ctx.fillRect(x1, this.THUMB_H, w, H - this.THUMB_H);
         }
     }
 
