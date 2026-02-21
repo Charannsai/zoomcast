@@ -352,7 +352,7 @@ class ZoomEngine {
                 } else {
                     // Save/restore so cursor drawing is isolated
                     ctx.save();
-                    ctx.setTransform(1, 0, 0, 1, 0, 0); // Absolute identity — never inside zoom transform
+                    // DO NOT wipe the canvas transform here, or else we lose dpr and layout translations!
                     this._drawImageCursor(ctx, pos.x, pos.y, scaledSize, cursorStyle, type);
                     ctx.restore();
                 }

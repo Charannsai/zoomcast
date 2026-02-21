@@ -3,6 +3,7 @@ import sys
 import subprocess
 import threading
 import time
+import ctypes
 
 def main():
     if len(sys.argv) < 3:
@@ -39,25 +40,33 @@ def main():
     # Start ffmpeg encoder
     process = subprocess.Popen(ffmpeg_args, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
     
-    # Start camera capture thread internally at 60fps
-    camera.start(target_fps=fps, video_mode=True)
+    # Do not rely on DXCAM's internal video_mode timer, it drops frames.
+    camera.start(target_fps=fps, video_mode=False)
     
     running = True
 
     def capture_loop():
         first_frame = True
-        # Read from dxcam queue
+        interval = 1.0 / fps
+        next_time = time.perf_counter()
+        
+        # Poll dxcam as fast as possible for the absolute newest frame
         while running:
-            # get_latest_frame waits for a new frame based on target_fps
-            frame = camera.get_latest_frame()
-            if frame is not None:
-                if first_frame:
-                    print("READY", flush=True)
-                    first_frame = False
-                try:
-                    process.stdin.write(frame.tobytes())
-                except Exception as e:
-                    break
+            now = time.perf_counter()
+            if now >= next_time:
+                # At this exact wall-clock moment, we MUST push a frame to ffmpeg
+                frame = camera.get_latest_frame()
+                if frame is not None:
+                    if first_frame:
+                        print("READY", flush=True)
+                        first_frame = False
+                    try:
+                        process.stdin.write(frame.tobytes())
+                    except Exception:
+                        break
+                next_time += interval
+            else:
+                time.sleep(0.001)
                     
     cap_thread = threading.Thread(target=capture_loop, daemon=True)
     cap_thread.start()
