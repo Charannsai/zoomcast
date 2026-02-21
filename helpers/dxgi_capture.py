@@ -48,13 +48,26 @@ def main():
     # At 30 FPS, this guarantees flawless synchronized rendering capability.
     frame_queue = queue.Queue(maxsize=0)
     
+    is_paused = False
+    total_pause_time = 0.0
+    pause_start_time = 0.0
+    
     def listen_stdin():
-        nonlocal running
+        nonlocal running, is_paused, total_pause_time, pause_start_time
         try:
             for line in sys.stdin:
-                if line.strip() == "STOP":
+                cmd = line.strip()
+                if cmd == "STOP":
                     running = False
                     break
+                elif cmd == "PAUSE":
+                    if not is_paused:
+                        is_paused = True
+                        pause_start_time = time.perf_counter()
+                elif cmd == "RESUME":
+                    if is_paused:
+                        is_paused = False
+                        total_pause_time += (time.perf_counter() - pause_start_time)
         except Exception:
             running = False
 
@@ -69,8 +82,12 @@ def main():
         last_frame_bytes = None
         
         while running:
+            if is_paused:
+                time.sleep(0.01)
+                continue
+                
             now = time.perf_counter()
-            target_frames = int((now - start_time) * fps)
+            target_frames = int((now - start_time - total_pause_time) * fps)
             
             if target_frames > frames_grabbed:
                 # Capture the fresh screen state

@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('zoomcast', {
     startTracking: (displayBounds) => ipcRenderer.invoke('start-tracking', displayBounds),
     stopTracking: () => ipcRenderer.invoke('stop-tracking'),
     startModal: () => ipcRenderer.send('start-modal'),
+    triggerPause: (paused) => ipcRenderer.send('trigger-pause-recording', paused),
     triggerStop: () => ipcRenderer.send('trigger-stop-recording'),
 
     // File operations

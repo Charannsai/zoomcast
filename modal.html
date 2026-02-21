@@ -91,9 +91,20 @@
             background: rgba(255, 255, 255, 0.2);
         }
 
+        .btn.pause {
+            background: rgba(253, 203, 110, 0.2);
+            border: 1px solid rgba(253, 203, 110, 0.5);
+            color: #fdcb6e;
+        }
+
+        .btn.pause:hover {
+            background: rgba(253, 203, 110, 0.4);
+        }
+
         .btn.stop {
             background: rgba(232, 67, 147, 0.2);
             border: 1px solid rgba(232, 67, 147, 0.5);
+            color: #e84393;
         }
 
         .btn.stop:hover {
@@ -105,20 +116,41 @@
 <body>
     <div class="modal">
         <div class="header">
-            <div class="dot"></div> Recording
+            <div class="dot" id="rec-dot"></div> <span id="rec-text">Recording</span>
         </div>
         <div class="timer" id="timer">00:00:00</div>
-        <button class="btn stop" id="stop">Stop Recording</button>
+        <div style="display: flex; gap: 8px; width: 100%;">
+            <button class="btn pause" id="pause">Pause</button>
+            <button class="btn stop" id="stop">Stop</button>
+        </div>
     </div>
     <script>
-        const start = Date.now();
+        let isPaused = false;
+        let totalElapsed = 0;
+        let lastTick = Date.now();
+
         setInterval(() => {
-            const el = (Date.now() - start) / 1000;
-            const h = Math.floor(el / 3600).toString().padStart(2, '0');
-            const m = Math.floor((el % 3600) / 60).toString().padStart(2, '0');
-            const s = Math.floor(el % 60).toString().padStart(2, '0');
+            if (!isPaused) {
+                totalElapsed += (Date.now() - lastTick) / 1000;
+            }
+            lastTick = Date.now();
+
+            const h = Math.floor(totalElapsed / 3600).toString().padStart(2, '0');
+            const m = Math.floor((totalElapsed % 3600) / 60).toString().padStart(2, '0');
+            const s = Math.floor(totalElapsed % 60).toString().padStart(2, '0');
             document.getElementById('timer').innerText = `${h}:${m}:${s}`;
         }, 100);
+
+        document.getElementById('pause').onclick = () => {
+            isPaused = !isPaused;
+            const btn = document.getElementById('pause');
+            btn.innerText = isPaused ? 'Resume' : 'Pause';
+            document.getElementById('rec-dot').style.animationPlayState = isPaused ? 'paused' : 'running';
+            document.getElementById('rec-dot').style.opacity = isPaused ? '0.5' : '';
+            document.getElementById('rec-text').innerText = isPaused ? 'Paused' : 'Recording';
+            window.zoomcast.triggerPause(isPaused);
+        };
+
         document.getElementById('stop').onclick = () => {
             window.zoomcast.triggerStop();
         };

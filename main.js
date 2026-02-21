@@ -16,6 +16,9 @@ let cursorData = [];
 let clickData = [];
 let recordingStartTime = 0;
 let isRecording = false;
+let trackingPaused = false;
+let trackingPauseTotal = 0;
+let trackingPauseStart = 0;
 
 // Python cursor tracker process
 let cursorTracker = null;
@@ -142,6 +145,22 @@ ipcMain.on('trigger-stop-recording', () => {
   }
 });
 
+ipcMain.on('trigger-pause-recording', (event, paused) => {
+  trackingPaused = paused;
+  if (dxgiCaptureProc) {
+    try { dxgiCaptureProc.stdin.write(paused ? 'PAUSE\n' : 'RESUME\n'); } catch (e) { }
+  }
+
+  if (paused) {
+    trackingPauseStart = Date.now();
+  } else {
+    if (trackingPauseStart > 0) {
+      trackingPauseTotal += Date.now() - trackingPauseStart;
+      trackingPauseStart = 0;
+    }
+  }
+});
+
 // Get screen sources for recording
 ipcMain.handle('get-sources', async () => {
   const sources = await desktopCapturer.getSources({
@@ -175,6 +194,9 @@ ipcMain.handle('start-tracking', (event, payload) => {
   clickData = [];
   recordingStartTime = payload?.startTime || Date.now();
   isRecording = true;
+  trackingPaused = false;
+  trackingPauseTotal = 0;
+  trackingPauseStart = 0;
 
   // payload can be { bounds, scaleFactor } (new) or plain bounds object (legacy)
   const displayBounds = payload?.bounds ?? payload;
@@ -193,9 +215,9 @@ ipcMain.handle('start-tracking', (event, payload) => {
 
   // Poll cursor position at 120Hz for ultra-smooth, accurate tracking
   cursorInterval = setInterval(() => {
-    if (!isRecording) return;
+    if (!isRecording || trackingPaused) return;
     const point = screen.getCursorScreenPoint();
-    const t = (Date.now() - recordingStartTime) / 1000;
+    const t = (Date.now() - trackingPauseTotal - recordingStartTime) / 1000;
 
     // Normalize to [0, 1] within the recording display, using logically-scaled screen space
     const nx = (point.x - sBx) / sw;
@@ -510,8 +532,8 @@ function startClickTracker(displayBounds) {
       for (const line of lines) {
         try {
           const event = JSON.parse(line);
-          if (event.type === 'click') {
-            const t = (Date.now() - recordingStartTime) / 1000;
+          if (event.type === 'click' && !trackingPaused) {
+            const t = (Date.now() - trackingPauseTotal - recordingStartTime) / 1000;
             const nx = (event.x - (displayBounds?.x || 0)) / (displayBounds?.width || 1920);
             const ny = (event.y - (displayBounds?.y || 0)) / (displayBounds?.height || 1080);
             clickData.push({ t, x: nx, y: ny, button: event.button });
