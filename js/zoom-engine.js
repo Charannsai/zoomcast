@@ -47,10 +47,10 @@ class ZoomEngine {
     // lag  = how far behind (seconds) the smooth position trails the raw position
     // lerp = per-frame lerp alpha toward target (used in real-time preview)
     static CURSOR_SPEEDS = {
-        slow: { lag: 0.18, lerp: 0.05 },
-        medium: { lag: 0.10, lerp: 0.12 },
-        fast: { lag: 0.05, lerp: 0.25 },
-        rapid: { lag: 0.00, lerp: 1.00 },
+        slow: { lag: 0.00, lerp: 1.0 },
+        medium: { lag: 0.00, lerp: 1.0 },
+        fast: { lag: 0.00, lerp: 1.0 },
+        rapid: { lag: 0.00, lerp: 1.0 },
     };
 
     // ── Zoom pan speed multipliers (easing duration override) ──
