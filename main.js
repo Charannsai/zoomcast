@@ -161,7 +161,7 @@ ipcMain.handle('start-tracking', (event, payload) => {
   // Start Python click tracker
   startClickTracker(displayBounds);
 
-  return { ok: true };
+  return { ok: true, startTime: recordingStartTime };
 });
 
 // Stop tracking and return data
