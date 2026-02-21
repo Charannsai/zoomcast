@@ -178,10 +178,24 @@ class ZoomCastApp {
             this.isPaused = false;
             this.recStartTime = Date.now();
 
-            await window.zoomcast.startTracking({
+            this.firstVideoFrameTimestamp = null;
+            this.firstCursorSampleTimestamp = null;
+
+            const captureVid = document.createElement('video');
+            captureVid.muted = true;
+            captureVid.srcObject = this.mediaStream;
+            captureVid.play();
+            captureVid.requestVideoFrameCallback(() => {
+                this.firstVideoFrameTimestamp = Date.now();
+                captureVid.pause();
+                captureVid.srcObject = null;
+            });
+
+            const trackResult = await window.zoomcast.startTracking({
                 bounds: this.displayBounds,
                 scaleFactor: this.displayScaleFactor,
             });
+            this.firstCursorSampleTimestamp = trackResult.startTime || Date.now();
 
             document.getElementById('recording-overlay').classList.remove('hidden');
             this.timerInterval = setInterval(() => this._updateTimer(), 50);
@@ -251,6 +265,12 @@ class ZoomCastApp {
         this.videoUrl = URL.createObjectURL(this.videoBlob);
 
         document.getElementById('recording-overlay').classList.add('hidden');
+
+        if (this.firstVideoFrameTimestamp && this.firstCursorSampleTimestamp) {
+            this.captureOffset = (this.firstCursorSampleTimestamp - this.firstVideoFrameTimestamp) / 1000;
+        } else {
+            this.captureOffset = 0.050; // fallback to 50ms drift
+        }
 
         const video = document.getElementById('hidden-video');
         video.src = this.videoUrl;
@@ -857,6 +877,7 @@ class ZoomCastApp {
             // Speed
             cursorSpeed: this._getSpeedValue('cursor-speed'),
             panSpeed: this._getSpeedValue('pan-speed'),
+            captureOffset: this.captureOffset || 0,
         };
     }
 
