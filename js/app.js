@@ -280,29 +280,11 @@ class ZoomCastApp {
             this._showScreen('home');
         };
         document.getElementById('btn-add-zoom').onclick = () => this._addZoomAtPlayhead();
-        document.getElementById('btn-delete-zoom').onclick = () => this._deleteSelectedZoom();
+        document.getElementById('btn-delete').onclick = () => this._deleteSelected();
         document.getElementById('btn-export').onclick = () => this._goToExport();
         document.getElementById('btn-play').onclick = () => this._togglePlayback();
         document.getElementById('btn-seek-start').onclick = () => this._seek(0);
         document.getElementById('btn-seek-end').onclick = () => this._seek(this.duration);
-        document.getElementById('btn-delete-selection').onclick = () => this._deleteSelection();
-        document.getElementById('btn-undo-cut').onclick = () => this._undoLastCut();
-
-        // Mode toggles
-        const modeZoom = document.getElementById('mode-zoom');
-        const modeCut = document.getElementById('mode-cut');
-        if (modeZoom) modeZoom.onclick = () => this._setEditorMode('zoom');
-        if (modeCut) modeCut.onclick = () => this._setEditorMode('cut');
-    }
-
-    _setEditorMode(mode) {
-        this.editorMode = mode;
-        document.getElementById('mode-zoom').classList.toggle('active', mode === 'zoom');
-        document.getElementById('mode-cut').classList.toggle('active', mode === 'cut');
-        document.getElementById('cut-tools').classList.toggle('hidden', mode !== 'cut');
-        // Sync timeline mode so it knows to use rubber-band selection
-        if (this.timeline) this.timeline.setMode(mode);
-        this._updateDeleteSelectionBtn();
     }
 
     _initEditor() {
@@ -313,27 +295,19 @@ class ZoomCastApp {
         this.previewCanvas = document.getElementById('preview-canvas');
         this.previewCtx = this.previewCanvas.getContext('2d', { willReadFrequently: true });
 
-        // Reset cut selection state
-        this._pendingCutStart = null;
-        this._pendingCutEnd = null;
-
         const tlCanvas = document.getElementById('timeline-canvas');
         this.timeline = new Timeline(tlCanvas, {
             duration: this.duration,
             segments: this.segments,
             cuts: this.cuts,
             onSeek: (t) => this._seek(t),
-            onSegmentSelect: (seg) => this._onSegmentSelect(seg),
+            onSelectionChange: (seg, clip) => {
+                this._onSelectionChange(seg, clip);
+            },
             onSegmentChange: (seg) => {
                 this._refreshPreview();
-                if (seg === this.timeline.selectedSeg) this._onSegmentSelect(seg);
-            },
-            // Called when user drags a cut range selection on the timeline
-            onCutSelection: (tStart, tEnd) => {
-                this._pendingCutStart = tStart;
-                this._pendingCutEnd = tEnd;
-                this._updateDeleteSelectionBtn();
-            },
+                if (seg === this.timeline.selectedSeg) this._onSelectionChange(seg, this.timeline.selectedClip);
+            }
         });
 
         this.timeline.generateThumbnails(video);
@@ -553,17 +527,7 @@ class ZoomCastApp {
         this.segments.push(seg);
         this.timeline.selectedSeg = seg;
         this.timeline.draw();
-        this._onSegmentSelect(seg);
-        this._refreshPreview();
-    }
-
-    _deleteSelectedZoom() {
-        if (!this.timeline?.selectedSeg) return;
-        const idx = this.segments.indexOf(this.timeline.selectedSeg);
-        if (idx !== -1) this.segments.splice(idx, 1);
-        this.timeline.selectedSeg = null;
-        this._onSegmentSelect(null);
-        this.timeline.draw();
+        this._onSelectionChange(seg, this.timeline.selectedClip);
         this._refreshPreview();
     }
 
@@ -581,7 +545,7 @@ class ZoomCastApp {
         this.segments.push(dup);
         this.timeline.selectedSeg = dup;
         this.timeline.draw();
-        this._onSegmentSelect(dup);
+        this._onSelectionChange(dup, this.timeline.selectedClip);
         this._refreshPreview();
     }
 
@@ -590,14 +554,33 @@ class ZoomCastApp {
         if (video && video.src) this._drawPreviewFrame(video);
     }
 
-    _onSegmentSelect(seg) {
+    _onSelectionChange(seg, clip) {
         const container = document.getElementById('segment-props');
-        if (!seg) {
-            container.innerHTML = '<p class="no-selection">Click a segment on the timeline to edit</p>';
+        if (!seg && !clip) {
+            container.innerHTML = '<p class="no-selection">Click a segment or clip on the timeline to edit</p>';
+            document.getElementById('btn-delete').disabled = true;
             return;
         }
 
-        const dur = (seg.tEnd - seg.tStart).toFixed(2);
+        document.getElementById('btn-delete').disabled = false;
+
+        if (clip && !seg) {
+            const dur = (clip.end - clip.start).toFixed(2);
+            container.innerHTML = `
+                <div class="prop-group">
+                    <div class="prop-header">Selected Clip</div>
+                    <div class="prop-row">
+                        <label class="prop-label">Duration</label>
+                        <span class="prop-value">${dur}s</span>
+                    </div>
+                    <div class="prop-row">
+                        <label class="prop-label">Start / End</label>
+                        <span class="prop-value">${clip.start.toFixed(2)}s - ${clip.end.toFixed(2)}s</span>
+                    </div>
+                </div>
+            `;
+            return;
+        }
 
         container.innerHTML = `
       <div class="seg-header">
