@@ -447,66 +447,26 @@ class ZoomCastApp {
         btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
     }
 
-    // ─── Cut (Range Selection) ────────────────────────────────────
+    // ─── Unified Deletion logic ────────────────────────────────────
 
-    /**
-     * Called by timeline's onCutSelection callback.
-     * Updates the Delete Selection button state.
-     */
-    _updateDeleteSelectionBtn() {
-        const btn = document.getElementById('btn-delete-selection');
-        const label = document.getElementById('cut-selection-label');
-        const hasSel = (this._pendingCutStart !== null &&
-            this._pendingCutEnd !== null &&
-            this._pendingCutEnd - this._pendingCutStart > 0.02);
-
-        if (btn) btn.disabled = !hasSel;
-        if (label && hasSel) {
-            const dur = (this._pendingCutEnd - this._pendingCutStart).toFixed(2);
-            label.textContent = `${dur}s selected`;
-        } else if (label) {
-            label.textContent = 'Drag timeline to select';
-        }
-    }
-
-    /**
-     * Commit the current rubber-band selection as a cut zone.
-     */
-    _deleteSelection() {
-        if (this._pendingCutStart === null || this._pendingCutEnd === null) return;
-        const tStart = Math.min(this._pendingCutStart, this._pendingCutEnd);
-        const tEnd = Math.max(this._pendingCutStart, this._pendingCutEnd);
-        if (tEnd - tStart < 0.02) return;
-
-        this.cuts.push({ tStart, tEnd });
-        this._pendingCutStart = null;
-        this._pendingCutEnd = null;
-
-        // Clear the live selection on the timeline
-        if (this.timeline) {
-            this.timeline.cutSelection = null;
-            this.timeline.cuts = this.cuts;
+    _deleteSelected() {
+        if (!this.timeline) return;
+        if (this.timeline.selectedSeg) {
+            const idx = this.segments.indexOf(this.timeline.selectedSeg);
+            if (idx !== -1) this.segments.splice(idx, 1);
+            this.timeline.selectedSeg = null;
+            this._onSelectionChange(null, this.timeline.selectedClip);
             this.timeline.draw();
-        }
-        this._updateCutCount();
-        this._updateDeleteSelectionBtn();
-        this._refreshPreview();
-    }
-
-    _undoLastCut() {
-        if (this.cuts.length === 0) return;
-        this.cuts.pop();
-        if (this.timeline) {
-            this.timeline.cuts = this.cuts;
+            this._refreshPreview();
+        } else if (this.timeline.selectedClip) {
+            this.timeline.selectedClip.deleted = true;
+            this.timeline.selectedClip = null;
+            this.timeline._rebuildCutsFromClips();
+            this.cuts = this.timeline.cuts;
+            this._onSelectionChange(null, null);
             this.timeline.draw();
+            this._refreshPreview();
         }
-        this._updateCutCount();
-        this._refreshPreview();
-    }
-
-    _updateCutCount() {
-        const el = document.getElementById('cut-count');
-        if (el) el.textContent = `${this.cuts.length} cut${this.cuts.length !== 1 ? 's' : ''}`;
     }
 
     _addZoomAtPlayhead() {
