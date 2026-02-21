@@ -130,17 +130,6 @@ class ZoomCastApp {
         if (!this.selectedSource) return;
 
         try {
-            this.mediaStream = await navigator.mediaDevices.getUserMedia({
-                audio: false,
-                video: {
-                    mandatory: {
-                        chromeMediaSource: 'desktop',
-                        chromeMediaSourceId: this.selectedSource.id,
-                        cursor: 'never',
-                    }
-                }
-            });
-
             const displays = await window.zoomcast.getDisplays();
             let display = displays[0];
 
@@ -156,40 +145,18 @@ class ZoomCastApp {
             this.displayBounds = display?.bounds || { x: 0, y: 0, width: 1920, height: 1080 };
             this.displayScaleFactor = display?.scaleFactor || 1;
 
-            const quality = document.getElementById('quality-select').value;
-            const bitrate = quality === 'ultra' ? 16000000 : quality === 'high' ? 10000000 : 5000000;
-
-            this.recordedChunks = [];
             this.clickData = [];
+            this.recordedChunks = [];
 
-            this.mediaRecorder = new MediaRecorder(this.mediaStream, {
-                mimeType: 'video/webm;codecs=vp8',
-                videoBitsPerSecond: bitrate,
-            });
-
-            this.mediaRecorder.ondataavailable = (e) => {
-                if (e.data.size > 0) this.recordedChunks.push(e.data);
-            };
-
-            this.mediaRecorder.onstop = () => this._onRecordingComplete();
-
-            this.mediaRecorder.start(1000);
             this.isRecording = true;
             this.isPaused = false;
             this.recStartTime = Date.now();
 
-            this.firstVideoFrameTimestamp = null;
+            this.firstVideoFrameTimestamp = Date.now();
             this.firstCursorSampleTimestamp = null;
 
-            const captureVid = document.createElement('video');
-            captureVid.muted = true;
-            captureVid.srcObject = this.mediaStream;
-            captureVid.play();
-            captureVid.requestVideoFrameCallback(() => {
-                this.firstVideoFrameTimestamp = Date.now();
-                captureVid.pause();
-                captureVid.srcObject = null;
-            });
+            // Start Native DXGI capture (bypasses Chromium completely)
+            this.nativeRecordingResult = await window.zoomcast.startNativeRecording({});
 
             const trackResult = await window.zoomcast.startTracking({
                 bounds: this.displayBounds,
@@ -207,18 +174,8 @@ class ZoomCastApp {
     }
 
     _togglePause() {
-        if (!this.mediaRecorder) return;
-        const btn = document.getElementById('btn-pause');
-
-        if (this.isPaused) {
-            this.mediaRecorder.resume();
-            this.isPaused = false;
-            btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>Pause`;
-        } else {
-            this.mediaRecorder.pause();
-            this.isPaused = true;
-            btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>Resume`;
-        }
+        // Pausing is not supported with background DXGI currently
+        alert("Pausing is not supported in DXGI Native Recording mode.");
     }
 
     async _stopRecording() {
@@ -227,13 +184,8 @@ class ZoomCastApp {
 
         if (this.timerInterval) clearInterval(this.timerInterval);
 
-        if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-            this.mediaRecorder.stop();
-        }
-
-        if (this.mediaStream) {
-            this.mediaStream.getTracks().forEach(t => t.stop());
-        }
+        // Stop Native Recording via Main Process
+        await window.zoomcast.stopNativeRecording();
 
         const trackData = await window.zoomcast.stopTracking();
         this.cursorData = trackData.cursor || [];
@@ -246,6 +198,8 @@ class ZoomCastApp {
             seen.add(key);
             return true;
         });
+        // Once stop tracking signals, actually load the video
+        this._onRecordingComplete();
     }
 
     _updateTimer() {
@@ -261,16 +215,20 @@ class ZoomCastApp {
     }
 
     async _onRecordingComplete() {
-        this.videoBlob = new Blob(this.recordedChunks, { type: 'video/webm' });
+        if (!this.nativeRecordingResult || !this.nativeRecordingResult.ok) {
+            alert('Failed to save native recording.');
+            return;
+        }
+
+        // Read resulting temp mp4 file from main process and generate a blob to replay locally
+        const buffer = await window.zoomcast.readFile(this.nativeRecordingResult.tempPath);
+        this.videoBlob = new Blob([buffer], { type: 'video/mp4' });
         this.videoUrl = URL.createObjectURL(this.videoBlob);
 
         document.getElementById('recording-overlay').classList.add('hidden');
 
-        if (this.firstVideoFrameTimestamp && this.firstCursorSampleTimestamp) {
-            this.captureOffset = (this.firstCursorSampleTimestamp - this.firstVideoFrameTimestamp) / 1000;
-        } else {
-            this.captureOffset = 0.050; // fallback to 50ms drift
-        }
+        // Native DXGI capture has negligible latency vs Chromium WebRTC
+        this.captureOffset = 0.0;
 
         const video = document.getElementById('hidden-video');
         video.src = this.videoUrl;

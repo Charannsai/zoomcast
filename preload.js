@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('zoomcast', {
     stopTracking: () => ipcRenderer.invoke('stop-tracking'),
 
     // File operations
+    startNativeRecording: (options) => ipcRenderer.invoke('start-native-recording', options),
+    stopNativeRecording: () => ipcRenderer.invoke('stop-native-recording'),
     showSaveDialog: (options) => ipcRenderer.invoke('show-save-dialog', options),
     saveTempVideo: (buffer) => ipcRenderer.invoke('save-temp-video', buffer),
     getTempDir: () => ipcRenderer.invoke('get-temp-dir'),

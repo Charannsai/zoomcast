@@ -201,6 +201,53 @@ ipcMain.handle('get-temp-dir', () => {
   return tmpDir;
 });
 
+// ─── Native DXGI Recording Stream ────────────────────────────────────────────
+let dxgiCaptureProc = null;
+
+ipcMain.handle('start-native-recording', async (event, options) => {
+  const tmpDir = path.join(app.getPath('temp'), 'zoomcast');
+  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+  // write to mp4, python uses libx264
+  const outPath = path.join(tmpDir, `recording_${Date.now()}.mp4`);
+
+  let ffmpegPath;
+  try { ffmpegPath = require('ffmpeg-static'); }
+  catch { ffmpegPath = 'ffmpeg'; }
+
+  return new Promise((resolve) => {
+    const scriptPath = path.join(__dirname, 'helpers', 'dxgi_capture.py');
+    dxgiCaptureProc = spawn('python', [scriptPath, outPath, ffmpegPath], {
+      stdio: ['pipe', 'inherit', 'inherit'],
+    });
+
+    dxgiCaptureProc.on('error', (err) => {
+      resolve({ ok: false, error: err.message });
+    });
+
+    setTimeout(() => {
+      resolve({ ok: true, tempPath: outPath });
+    }, 500);
+  });
+});
+
+ipcMain.handle('stop-native-recording', async () => {
+  if (!dxgiCaptureProc) return { ok: false };
+
+  return new Promise((resolve) => {
+    dxgiCaptureProc.on('close', () => {
+      dxgiCaptureProc = null;
+      resolve({ ok: true });
+    });
+
+    try {
+      dxgiCaptureProc.stdin.write('STOP\n');
+      dxgiCaptureProc.stdin.end();
+    } catch {
+      dxgiCaptureProc.kill();
+    }
+  });
+});
+
 // ─── Raw-frame streaming export ────────────────────────────────────────────
 // Holds the active FFmpeg process during a streaming export session
 let ffmpegStreamProc = null;
