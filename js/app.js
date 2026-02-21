@@ -345,6 +345,16 @@ class ZoomCastApp {
         document.getElementById('btn-play').onclick = () => this._togglePlayback();
         document.getElementById('btn-seek-start').onclick = () => this._seek(0);
         document.getElementById('btn-seek-end').onclick = () => this._seek(this.duration);
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (this.currentScreen === 'editor') {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+                if (e.key === 'Delete' || e.key === 'Backspace') {
+                    this._deleteSelected();
+                }
+            }
+        });
     }
 
     _initEditor() {
