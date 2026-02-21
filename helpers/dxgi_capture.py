@@ -31,7 +31,8 @@ def main():
         "-i", "-", # read from stdin
         "-c:v", "libx264",
         "-preset", "ultrafast",
-        "-crf", "18",
+        "-crf", "12",
+        "-tune", "zerolatency",
         "-pix_fmt", "yuv420p",
         out_path
     ]

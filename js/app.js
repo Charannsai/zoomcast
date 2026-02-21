@@ -163,6 +163,7 @@ class ZoomCastApp {
             this.firstCursorSampleTimestamp = null;
 
             const fpsSetting = parseInt(document.getElementById('fps-select')?.value) || 30;
+            this.recordedFps = fpsSetting;
 
             // Start Native DXGI capture (bypasses Chromium completely)
             this.nativeRecordingResult = await window.zoomcast.startNativeRecording({ displayIdx, fps: fpsSetting });
@@ -905,7 +906,7 @@ class ZoomCastApp {
         const meta = document.getElementById('export-meta');
         meta.innerHTML = `
       <span class="meta-chip">📹 ${this.duration.toFixed(1)}s</span>
-      <span class="meta-chip">🎞️ ~${Math.round(this.duration * 30)} frames</span>
+      <span class="meta-chip">🎞️ ~${Math.round(this.duration * (this.recordedFps || 30))} frames</span>
       <span class="meta-chip">🔍 ${this.segments.length} zoom segments</span>
       <span class="meta-chip">✂️ ${this.cuts.length} cuts</span>
       <span class="meta-chip">🖱️ ${this.clickData.length} clicks</span>
@@ -957,7 +958,7 @@ class ZoomCastApp {
             const srcW = video.videoWidth || 1920;
             const srcH = video.videoHeight || 1080;
 
-            const fps = 30;
+            const fps = this.recordedFps || 30;
 
             // Add padding * 2 to the true raw video dimensions so the inner video area is untouched
             const vw = (srcW + padding * 2) & ~1 || 2;

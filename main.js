@@ -280,8 +280,8 @@ ipcMain.handle('start-ffmpeg-stream', async (event, options) => {
     '-r', String(fps),
     '-i', '-',           // read from stdin
     '-c:v', 'libx264',
-    '-preset', 'veryfast',
-    '-crf', '18',
+    '-preset', 'fast',
+    '-crf', '14',
     '-pix_fmt', 'yuv420p',
     '-movflags', '+faststart',
     outputPath,
