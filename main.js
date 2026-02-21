@@ -50,6 +50,10 @@ function createWindow() {
   });
 }
 
+app.disableHardwareAcceleration();
+app.commandLine.appendSwitch('disable-direct-composition');
+app.commandLine.appendSwitch('disable-features', 'UseSkiaRenderer');
+
 app.whenReady().then(() => {
   createWindow();
 
