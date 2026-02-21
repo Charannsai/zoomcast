@@ -134,10 +134,12 @@ ipcMain.handle('start-tracking', (event, payload) => {
   const bw = displayBounds?.width || 1920;
   const bh = displayBounds?.height || 1080;
 
-  // On Windows, getCursorScreenPoint() returns LOGICAL pixels,
-  // matching display.bounds. Divide by logical width/height to get [0,1].
-  const sw = bw;
-  const sh = bh;
+  // DXGI captures physical pixels, but Electron's `getCursorScreenPoint()` returns logic ones.
+  // We MUST scale the display bounds to determine exactly correct cursor offset ratios.
+  const sw = bw / scaleFactor;
+  const sh = bh / scaleFactor;
+  const sBx = bx / scaleFactor;
+  const sBy = by / scaleFactor;
 
   // Poll cursor position at 120Hz for ultra-smooth, accurate tracking
   cursorInterval = setInterval(() => {
@@ -145,9 +147,9 @@ ipcMain.handle('start-tracking', (event, payload) => {
     const point = screen.getCursorScreenPoint();
     const t = (Date.now() - recordingStartTime) / 1000;
 
-    // Normalize to [0, 1] within the recording display
-    const nx = (point.x - bx) / sw;
-    const ny = (point.y - by) / sh;
+    // Normalize to [0, 1] within the recording display, using logically-scaled screen space
+    const nx = (point.x - sBx) / sw;
+    const ny = (point.y - sBy) / sh;
 
     // Skip if cursor is outside of this display (can happen on multi-monitor setups)
     if (nx < -0.05 || nx > 1.05 || ny < -0.05 || ny > 1.05) return;
