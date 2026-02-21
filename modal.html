@@ -18,16 +18,18 @@
             background: rgba(14, 16, 21, 0.95);
             border: 1px solid rgba(255, 255, 255, 0.15);
             border-radius: 12px;
-            padding: 16px;
+            padding: 18px 20px;
             box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
             color: white;
             display: flex;
             flex-direction: column;
             gap: 12px;
             -webkit-app-region: drag;
-            height: calc(100vh - 32px);
-            margin: 16px;
+            height: calc(100vh - 24px);
+            margin: 12px;
             box-sizing: border-box;
+            justify-content: center;
+            align-items: center;
         }
 
         .header {
@@ -35,7 +37,10 @@
             align-items: center;
             gap: 8px;
             font-size: 13px;
-            font-weight: 600;
+            font-weight: 500;
+            color: #b0b0b0;
+            width: 100%;
+            justify-content: center;
         }
 
         .dot {
@@ -61,22 +66,24 @@
         }
 
         .timer {
-            font-size: 24px;
-            font-weight: 300;
+            font-size: 28px;
+            font-weight: 400;
             font-variant-numeric: tabular-nums;
             text-align: center;
+            width: 100%;
         }
 
         .btn {
             background: rgba(255, 255, 255, 0.1);
             border: none;
-            border-radius: 6px;
+            border-radius: 8px;
             color: white;
-            padding: 8px;
+            padding: 10px;
             width: 100%;
             cursor: pointer;
             -webkit-app-region: no-drag;
             font-size: 13px;
+            font-weight: 500;
             transition: 0.2s;
         }
 

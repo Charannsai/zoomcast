@@ -111,10 +111,10 @@ ipcMain.on('start-modal', () => {
   if (modalWindow) return;
   const primary = screen.getPrimaryDisplay();
   modalWindow = new BrowserWindow({
-    width: 220,
-    height: 120,
-    x: primary.workAreaSize.width - 240,
-    y: primary.workAreaSize.height - 140,
+    width: 240,
+    height: 140,
+    x: primary.workAreaSize.width - 260,
+    y: primary.workAreaSize.height - 160,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
