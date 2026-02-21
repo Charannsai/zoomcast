@@ -42,11 +42,12 @@ def main():
     
     camera.start(target_fps=fps, video_mode=True)
     
-    first_frame = True
-    start_time = None
-    frames_sent = 0
     running = True
 
+    # We store the latest safely extracted python bytes here
+    latest_bytes = None
+    bytes_lock = threading.Lock()
+    
     def listen_stdin():
         nonlocal running
         try:
@@ -57,51 +58,75 @@ def main():
         except Exception:
             running = False
 
-    t_listener = threading.Thread(target=listen_stdin, daemon=True)
-    t_listener.start()
-    
-    # We will poll `get_latest_frame()` which native-blocks until exactly 1/60th sec.
-    # It guarantees no stutter. However, if FFmpeg stutters, we just push exactly 
-    # the amount of lost frames to catch up.
-    
-    try:
+    def grab_loop():
+        nonlocal latest_bytes
+        first = True
         while running:
             f = camera.get_latest_frame()
             if f is None:
-                # Fallback safety if the renderer skips
                 continue
                 
-            if first_frame:
-                start_time = time.perf_counter()
-                print(f"READY {time.time() * 1000}", flush=True)
-                first_frame = False
+            # Safely extract from DirectX memory into purely Python memory
+            b = f.tobytes()
+            with bytes_lock:
+                latest_bytes = b
+                
+    def write_loop():
+        nonlocal latest_bytes
+        
+        # Wait for the first bytes to be available
+        while latest_bytes is None and running:
+            time.sleep(0.005)
             
-            # The exact number of frames that SHOULD have been written by now
+        if not running: return
+            
+        print(f"READY {time.time() * 1000}", flush=True)
+        start_time = time.perf_counter()
+        frames_sent = 0
+        
+        while running:
             now = time.perf_counter()
             target_frames = int((now - start_time) * fps)
             
-            # Usually frames_to_write is 1. If FFmpeg lags, it might be 2 or 3.
-            # If our loop is running faster than physical time (impossible with get_latest_frame, but safe), it's 0.
+            # Catch up if FFmpeg stalled, or keep 1:1 if it's fine
             frames_to_write = max(0, target_frames - frames_sent)
             
             if frames_to_write > 0:
-                # Convert only once to save CPU
-                f_bytes = f.tobytes()
-                for _ in range(frames_to_write):
-                    try:
-                        process.stdin.write(f_bytes)
-                        frames_sent += 1
-                    except Exception:
-                        break # FFmpeg closed
+                with bytes_lock:
+                    b = latest_bytes
+                
+                if b is not None:
+                    for _ in range(frames_to_write):
+                        try:
+                            # Blocking write. If pipe full, this pauses here,
+                            # but grab_loop continues flawlessly!
+                            process.stdin.write(b)
+                            frames_sent += 1
+                        except Exception:
+                            # FFmpeg exited early/broken pipe
+                            break
+            else:
+                time.sleep(0.001)
 
-            # Process STDIN to catch the FAST STOP signal from JS
-            # (select/poll on stdin is not safe in windows, so we relies on closing the pipe)
-            
+    t_listener = threading.Thread(target=listen_stdin, daemon=True)
+    t_grab = threading.Thread(target=grab_loop, daemon=True)
+    t_write = threading.Thread(target=write_loop, daemon=True)
+    
+    t_listener.start()
+    t_grab.start()
+    t_write.start()
+    
+    # Wait for STOP signal
+    try:
+        while running:
+            time.sleep(0.1)
     except KeyboardInterrupt:
         pass
-    except Exception as e:
+    except Exception:
         pass
         
+    running = False
+    
     camera.stop()
     
     if process.stdin:
