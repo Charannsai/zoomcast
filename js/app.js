@@ -827,6 +827,7 @@ class ZoomCastApp {
             'shadow-slider': 'shadow-value',
             'cursor-size-slider': 'cursor-size-value',
             'cursor-zoom-slider': 'cursor-zoom-value',
+            'motion-blur-intensity': 'motion-blur-intensity-value',
         };
         for (const [sliderId, valId] of Object.entries(rangeMap)) {
             const slider = document.getElementById(sliderId);
@@ -834,7 +835,7 @@ class ZoomCastApp {
             slider.oninput = () => {
                 const suffix = sliderId.includes('cursor-size') ? '×'
                     : sliderId.includes('cursor-zoom') ? '×'
-                        : sliderId.includes('shadow') ? '%'
+                        : (sliderId.includes('shadow') || sliderId.includes('blur-intensity')) ? '%'
                             : 'px';
                 document.getElementById(valId).textContent = slider.value + suffix;
                 update();
@@ -911,6 +912,7 @@ class ZoomCastApp {
             screenMotionBlur: document.getElementById('screen-motion-blur')?.checked ?? false,
             zoomMotionBlur: document.getElementById('zoom-motion-blur')?.checked ?? false,
             cursorMotionBlur: document.getElementById('cursor-motion-blur')?.checked ?? false,
+            motionBlurIntensity: parseInt(document.getElementById('motion-blur-intensity')?.value ?? 40),
             // Cursor follow
             followCursor: document.getElementById('follow-cursor')?.checked ?? true,
             autoZoomOnCursor: document.getElementById('auto-zoom-cursor')?.checked ?? false,
