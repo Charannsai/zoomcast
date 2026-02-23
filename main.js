@@ -36,6 +36,26 @@ function resolveHelper(name) {
   return null;
 }
 
+// ─── FFmpeg Resolver ──────────────────────────────────────────────
+function resolveFfmpeg() {
+  // 1. Production (packaged) — ffmpeg.exe copied to resources dir
+  const prodFfmpeg = path.join(process.resourcesPath || '', 'ffmpeg.exe');
+  if (fs.existsSync(prodFfmpeg)) {
+    return prodFfmpeg;
+  }
+
+  // 2. Development (unpackaged) — use npm ffmpeg-static
+  try {
+    const devFfmpeg = require('ffmpeg-static');
+    if (devFfmpeg) return devFfmpeg;
+  } catch (e) {
+    // Ignore error
+  }
+
+  // 3. System fallback
+  return 'ffmpeg';
+}
+
 let mainWindow = null;
 let modalWindow = null;
 let cursorInterval = null;
@@ -312,9 +332,7 @@ ipcMain.handle('start-native-recording', async (event, options) => {
   if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
   const outPath = path.join(tmpDir, `recording_${Date.now()}.mp4`);
 
-  let ffmpegPath;
-  try { ffmpegPath = require('ffmpeg-static'); }
-  catch { ffmpegPath = 'ffmpeg'; }
+  const ffmpegPath = resolveFfmpeg();
 
   // Use compiled exe in production, Python script in dev
   const helper = resolveHelper('dxgi_capture');
@@ -376,9 +394,7 @@ let ffmpegStreamReject = null;
 ipcMain.handle('start-ffmpeg-stream', async (event, options) => {
   const { outputPath, width, height, fps = 30 } = options;
 
-  let ffmpegPath;
-  try { ffmpegPath = require('ffmpeg-static'); }
-  catch { ffmpegPath = 'ffmpeg'; }
+  const ffmpegPath = resolveFfmpeg();
 
   const args = [
     '-y',
@@ -486,17 +502,12 @@ ipcMain.handle('export-video', async (event, options) => {
 });
 
 // Export directly from webm to mp4 (simple re-encode)
-ipcMain.handle('simple-export', async (event, options) => {
+ipcMain.handle('encode-video', async (event, options) => {
   const { inputPath, outputPath } = options;
 
-  try {
-    let ffmpegPath;
-    try {
-      ffmpegPath = require('ffmpeg-static');
-    } catch {
-      ffmpegPath = 'ffmpeg';
-    }
+  const ffmpegPath = resolveFfmpeg();
 
+  try {
     return new Promise((resolve, reject) => {
       const args = [
         '-y',

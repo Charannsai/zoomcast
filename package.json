@@ -54,7 +54,8 @@
       "icon": "assets/icon.ico",
       "requestedExecutionLevel": "requireAdministrator",
       "sign": null,
-      "forceCodeSigning": false
+      "forceCodeSigning": false,
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
