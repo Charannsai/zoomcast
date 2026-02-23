@@ -346,6 +346,7 @@ ipcMain.handle('start-native-recording', async (event, options) => {
     const spawnArgs = [...helper.args, outPath, ffmpegPath, String(displayIdx), String(fps)];
     dxgiCaptureProc = spawn(helper.cmd, spawnArgs, {
       stdio: ['pipe', 'pipe', 'inherit'],
+      windowsHide: true
     });
 
     dxgiCaptureProc.stdout.on('data', (d) => {
@@ -413,7 +414,7 @@ ipcMain.handle('start-ffmpeg-stream', async (event, options) => {
 
   return new Promise((resolve, reject) => {
     try {
-      ffmpegStreamProc = spawn(ffmpegPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+      ffmpegStreamProc = spawn(ffmpegPath, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     } catch (err) {
       return reject({ ok: false, error: err.message });
     }
@@ -520,7 +521,7 @@ ipcMain.handle('encode-video', async (event, options) => {
         outputPath,
       ];
 
-      const proc = spawn(ffmpegPath, args);
+      const proc = spawn(ffmpegPath, args, { windowsHide: true });
       let stderr = '';
 
       proc.stderr.on('data', (data) => {
@@ -574,6 +575,7 @@ function startClickTracker(displayBounds) {
     const spawnArgs = [...helper.args];
     cursorTracker = spawn(helper.cmd, spawnArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true
     });
 
     cursorTracker.stdout.on('data', (data) => {
