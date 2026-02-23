@@ -11,9 +11,11 @@
   "scripts": {
     "start": "electron .",
     "make-icon": "node scripts/generate-icon.js",
+    "build:helpers": "node scripts/build-python-helpers.js",
     "prebuild": "node scripts/generate-icon.js",
     "build": "electron-builder --win",
     "build:dir": "electron-builder --dir",
+    "build:full": "node scripts/generate-icon.js && node scripts/build-python-helpers.js && electron-builder --win",
     "postinstall": "electron-builder install-app-deps"
   },
   "devDependencies": {
@@ -73,7 +75,7 @@
       "css/**/*",
       "js/**/*",
       "assets/**/*",
-      "helpers/**/*",
+      "helpers/bin/**/*",
       "node_modules/**/*",
       "!node_modules/.cache/**/*",
       "!node_modules/**/*.md",
@@ -91,6 +93,14 @@
       {
         "from": "node_modules/ffmpeg-static/ffmpeg.exe",
         "to": "ffmpeg.exe"
+      },
+      {
+        "from": "helpers/bin/cursor_tracker.exe",
+        "to": "helpers/bin/cursor_tracker.exe"
+      },
+      {
+        "from": "helpers/bin/dxgi_capture.exe",
+        "to": "helpers/bin/dxgi_capture.exe"
       }
     ]
   }

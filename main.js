@@ -9,6 +9,33 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
+// ─── Helper Resolver ─────────────────────────────────────────────
+// In production (packaged), uses compiled standalone EXEs from helpers/bin/.
+// In development, falls back to running Python scripts directly.
+// This makes the app 100% self-contained — no Python required for end users.
+function resolveHelper(name) {
+  // 1. Check for compiled exe next to the app (packaged build via extraResources)
+  const exeInResources = path.join(process.resourcesPath || '', 'helpers', 'bin', `${name}.exe`);
+  if (fs.existsSync(exeInResources)) {
+    return { cmd: exeInResources, args: [], isPython: false };
+  }
+
+  // 2. Check for compiled exe in helpers/bin/ (works in both dev and when Electron is
+  //    started from the project root with `npm start`)
+  const exeInBin = path.join(__dirname, 'helpers', 'bin', `${name}.exe`);
+  if (fs.existsSync(exeInBin)) {
+    return { cmd: exeInBin, args: [], isPython: false };
+  }
+
+  // 3. Dev fallback — run the Python script directly
+  const pyScript = path.join(__dirname, 'helpers', `${name}.py`);
+  if (fs.existsSync(pyScript)) {
+    return { cmd: 'python', args: [pyScript], isPython: true };
+  }
+
+  return null;
+}
+
 let mainWindow = null;
 let modalWindow = null;
 let cursorInterval = null;
@@ -283,16 +310,23 @@ ipcMain.handle('start-native-recording', async (event, options) => {
   const fps = options?.fps || 30;
   const tmpDir = path.join(app.getPath('temp'), 'zoomcast');
   if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-  // write to mp4, python uses libx264
   const outPath = path.join(tmpDir, `recording_${Date.now()}.mp4`);
 
   let ffmpegPath;
   try { ffmpegPath = require('ffmpeg-static'); }
   catch { ffmpegPath = 'ffmpeg'; }
 
+  // Use compiled exe in production, Python script in dev
+  const helper = resolveHelper('dxgi_capture');
+  if (!helper) {
+    return { ok: false, error: 'dxgi_capture helper not found. Run: npm run build:helpers' };
+  }
+
+  console.log(`[Recording] Using helper: ${helper.cmd} (python=${helper.isPython})`);
+
   return new Promise((resolve) => {
-    const scriptPath = path.join(__dirname, 'helpers', 'dxgi_capture.py');
-    dxgiCaptureProc = spawn('python', [scriptPath, outPath, ffmpegPath, String(displayIdx), String(fps)], {
+    const spawnArgs = [...helper.args, outPath, ffmpegPath, String(displayIdx), String(fps)];
+    dxgiCaptureProc = spawn(helper.cmd, spawnArgs, {
       stdio: ['pipe', 'pipe', 'inherit'],
     });
 
@@ -514,16 +548,20 @@ ipcMain.handle('cleanup-temp', async (event, dirPath) => {
 // ─── Cursor / Click Tracking ────────────────────────────────────
 
 function startClickTracker(displayBounds) {
-  // Use a Python subprocess for reliable global mouse click detection
-  const pythonScript = path.join(__dirname, 'helpers', 'cursor_tracker.py');
-
-  if (!fs.existsSync(pythonScript)) {
-    console.warn('cursor_tracker.py not found, click detection disabled');
+  // Use compiled exe in production, Python script in dev
+  const helper = resolveHelper('cursor_tracker');
+  if (!helper) {
+    console.warn('[ClickTracker] cursor_tracker helper not found — click detection disabled.');
+    console.warn('  In dev: ensure helpers/cursor_tracker.py exists.');
+    console.warn('  In production: run `npm run build:helpers` first.');
     return;
   }
 
+  console.log(`[ClickTracker] Using helper: ${helper.cmd} (python=${helper.isPython})`);
+
   try {
-    cursorTracker = spawn('python', [pythonScript], {
+    const spawnArgs = [...helper.args];
+    cursorTracker = spawn(helper.cmd, spawnArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
@@ -544,10 +582,10 @@ function startClickTracker(displayBounds) {
     });
 
     cursorTracker.on('error', (err) => {
-      console.warn('Click tracker error:', err.message);
+      console.warn('[ClickTracker] Error:', err.message);
     });
   } catch (err) {
-    console.warn('Could not start click tracker:', err.message);
+    console.warn('[ClickTracker] Could not start:', err.message);
   }
 }
 
