@@ -16,7 +16,6 @@ class ZoomCastApp {
         this.recStartTime = 0;
         this.timerInterval = null;
 
-        // Recording data
         this.videoBlob = null;
         this.videoUrl = null;
         this.cursorData = [];
