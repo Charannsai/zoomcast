@@ -10,6 +10,7 @@ import time
 import threading
 from pynput import mouse
 import ctypes
+import queue
 
 try:
     ctypes.windll.user32.SetProcessDPIAware()
@@ -17,6 +18,23 @@ except Exception:
     pass
 
 def main():
+    q = queue.Queue()
+    running = True
+
+    def writer_thread():
+        while running:
+            try:
+                event = q.get(timeout=0.1)
+                sys.stdout.write(json.dumps(event) + "\n")
+                sys.stdout.flush()
+            except queue.Empty:
+                pass
+            except Exception:
+                pass
+
+    t_writer = threading.Thread(target=writer_thread, daemon=True)
+    t_writer.start()
+
     def on_click(x, y, button, pressed):
         if pressed:
             event = {
@@ -27,8 +45,7 @@ def main():
                 "time": time.time()
             }
             try:
-                sys.stdout.write(json.dumps(event) + "\n")
-                sys.stdout.flush()
+                q.put_nowait(event)
             except:
                 pass
 
@@ -43,6 +60,7 @@ def main():
     except:
         pass
 
+    running = False
     listener.stop()
 
 if __name__ == "__main__":

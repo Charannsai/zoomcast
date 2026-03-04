@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#0d0d1a"/>
+    </linearGradient>
+    <linearGradient id="lens" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6C5CE7"/>
+      <stop offset="100%" style="stop-color:#a29bfe"/>
+    </linearGradient>
+    <linearGradient id="inner" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2d2d4e"/>
+      <stop offset="100%" style="stop-color:#1a1a3a"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="round">
+      <rect width="512" height="512" rx="115" ry="115"/>
+    </clipPath>
+  </defs>
+
+  <!-- Rounded square background -->
+  <rect width="512" height="512" rx="115" ry="115" fill="url(#bg)"/>
+
+  <!-- Outer lens ring glow -->
+  <circle cx="220" cy="220" r="145" fill="none" stroke="url(#lens)" stroke-width="24" opacity="0.3" filter="url(#glow)"/>
+
+  <!-- Main lens ring -->
+  <circle cx="220" cy="220" r="140" fill="url(#inner)" stroke="url(#lens)" stroke-width="18"/>
+
+  <!-- Inner lens reflection -->
+  <circle cx="220" cy="220" r="108" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+  <circle cx="220" cy="220" r="90" fill="rgba(108,92,231,0.08)"/>
+
+  <!-- Lens highlight -->
+  <ellipse cx="178" cy="168" rx="28" ry="18" fill="rgba(255,255,255,0.08)" transform="rotate(-30,178,168)"/>
+
+  <!-- Recording dot (red) -->
+  <circle cx="220" cy="220" r="32" fill="#E84393" opacity="0.95" filter="url(#glow)"/>
+  <circle cx="220" cy="220" r="22" fill="#ff6eb4"/>
+
+  <!-- Handle (zoom lens stick) -->
+  <line x1="331" y1="331" x2="400" y2="400" stroke="url(#lens)" stroke-width="30" stroke-linecap="round"/>
+
+  <!-- Handle cap -->
+  <circle cx="405" cy="405" r="22" fill="#6C5CE7"/>
+
+  <!-- Small sparkle top right -->
+  <circle cx="370" cy="142" r="6" fill="rgba(162,155,254,0.6)"/>
+  <circle cx="390" cy="115" r="3" fill="rgba(162,155,254,0.4)"/>
+  <circle cx="350" cy="110" r="4" fill="rgba(108,92,231,0.5)"/>
+</svg>

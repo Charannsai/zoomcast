@@ -35,13 +35,42 @@ class ZoomEngine {
     };
 
     // ── Motion blur sample offsets (temporal) ──
-    static MOTION_BLUR_SAMPLES = [
-        { dt: 0.000, alpha: 1.00 },
-        { dt: 0.016, alpha: 0.55 },
-        { dt: 0.033, alpha: 0.30 },
-        { dt: 0.050, alpha: 0.18 },
-        { dt: 0.066, alpha: 0.10 },
-    ];
+    // Intensity 0-100 scales both number of ghost frames and their opacity.
+    // generateBlurSamples(intensity) → returns array of {dt, alpha} pairs.
+    static generateBlurSamples(intensity, type = 'screen') {
+        if (intensity <= 0) return [];
+        const t = intensity / 100; // 0..1
+
+        if (type === 'cursor') {
+            // Cursor blur: up to 4 ghost frames trailing behind
+            const maxGhosts = Math.round(1 + t * 3); // 1..4
+            const maxDt = 0.016 + t * 0.050;       // 16ms..66ms look-back
+            const baseAlpha = 0.15 + t * 0.40;        // ghost strength
+            const samples = [];
+            for (let i = maxGhosts; i >= 1; i--) {
+                const frac = i / maxGhosts;
+                samples.push({
+                    dt: maxDt * frac,
+                    alpha: baseAlpha * (1 - frac * 0.5)
+                });
+            }
+            return samples;
+        }
+
+        // Screen / zoom blur: up to 5 temporal accumulation frames
+        const maxGhosts = Math.round(1 + t * 4); // 1..5
+        const maxDt = 0.016 + t * 0.066;       // 16ms..82ms
+        const baseAlpha = 0.12 + t * 0.28;        // 0.12..0.40 per ghost
+        const samples = [];
+        for (let i = 1; i <= maxGhosts; i++) {
+            const frac = i / maxGhosts;
+            samples.push({
+                dt: maxDt * frac,
+                alpha: baseAlpha * Math.pow(1 - frac * 0.6, 1.5)
+            });
+        }
+        return samples;
+    }
 
     // ── Cursor movement easing speeds ──
     // lag  = how far behind (seconds) the smooth position trails the raw position
@@ -192,7 +221,9 @@ class ZoomEngine {
             clickData = null, clickEffects = true,
             // Motion blur
             screenMotionBlur = false,
+            zoomMotionBlur = false,
             cursorMotionBlur = false,
+            motionBlurIntensity = 40,
             // Speed controls
             cursorSpeed = 'medium',
             panSpeed = 'medium',
@@ -286,8 +317,15 @@ class ZoomEngine {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
 
-        if (screenMotionBlur && segments.length > 0) {
-            this._drawWithMotionBlur(ctx, source, t, segments, config, screenX, screenY, screenW, screenH, factor, cx, cy, panSpeed);
+        if (screenMotionBlur && motionBlurIntensity > 0) {
+            this._drawWithMotionBlur(ctx, source, t, segments, config,
+                screenX, screenY, screenW, screenH,
+                factor, cx, cy, panSpeed, motionBlurIntensity, false);
+        } else if (zoomMotionBlur && motionBlurIntensity > 0 && segments.length > 0) {
+            // Zoom blur: only during active zoom transitions (ease-in / ease-out)
+            this._drawWithMotionBlur(ctx, source, t, segments, config,
+                screenX, screenY, screenW, screenH,
+                factor, cx, cy, panSpeed, motionBlurIntensity, true);
         } else {
             this._drawVideoFrame(ctx, source, factor, cx, cy, screenX, screenY, screenW, screenH);
         }
@@ -347,8 +385,8 @@ class ZoomEngine {
                 // Multiply size by factor so the custom cursor zooms in perfectly
                 const scaledSize = cursorSize * factor;
 
-                if (cursorMotionBlur) {
-                    this._drawCursorWithBlur(ctx, syncT, cursorData, factor, cx, cy, screenX, screenY, screenW, screenH, scaledSize, cursorStyle, type, cursorSpeed, clickData);
+                if (cursorMotionBlur && motionBlurIntensity > 0) {
+                    this._drawCursorWithBlur(ctx, syncT, cursorData, factor, cx, cy, screenX, screenY, screenW, screenH, scaledSize, cursorStyle, type, cursorSpeed, clickData, motionBlurIntensity);
                 } else {
                     // Save/restore so cursor drawing is isolated
                     ctx.save();
@@ -397,22 +435,31 @@ class ZoomEngine {
         }
     }
 
-    // ── Screen Motion Blur ──
-    static _drawWithMotionBlur(ctx, source, t, segments, config, sx, sy, sw, sh, factor, cx, cy, panSpeed) {
+    // ── Screen / Zoom Motion Blur ──
+    // zoomOnly=true → only draws blur when zoom state is actually changing
+    static _drawWithMotionBlur(ctx, source, t, segments, config, sx, sy, sw, sh, factor, cx, cy, panSpeed, intensity, zoomOnly) {
+        // Always draw the sharp current frame first
         this._drawVideoFrame(ctx, source, factor, cx, cy, sx, sy, sw, sh);
 
-        const samples = this.MOTION_BLUR_SAMPLES.slice(1);
+        const samples = this.generateBlurSamples(intensity, 'screen');
         for (const sample of samples) {
             const prevT = Math.max(0, t - sample.dt);
             const prevZoom = this.getZoomAt(prevT, segments, panSpeed);
 
+            // Measure how much the camera actually moved between now and the ghost frame
             const zoomDelta = Math.abs(prevZoom.factor - factor)
-                + Math.abs(prevZoom.cx - cx) * 2
-                + Math.abs(prevZoom.cy - cy) * 2;
-            if (zoomDelta < 0.01) continue;
+                + Math.abs(prevZoom.cx - cx) * 3
+                + Math.abs(prevZoom.cy - cy) * 3;
+
+            // Skip ghost frame if the camera hasn't moved (avoids static shimmer)
+            const threshold = zoomOnly ? 0.005 : 0.002;
+            if (zoomDelta < threshold) continue;
+
+            // Scale ghost opacity by how much the camera moved (caps at 1)
+            const motionScale = Math.min(1, zoomDelta * (zoomOnly ? 8 : 5));
 
             ctx.save();
-            ctx.globalAlpha = sample.alpha * Math.min(1, zoomDelta * 4);
+            ctx.globalAlpha = sample.alpha * motionScale;
             ctx.globalCompositeOperation = 'source-over';
             this._drawVideoFrame(ctx, source, prevZoom.factor, prevZoom.cx, prevZoom.cy, sx, sy, sw, sh);
             ctx.restore();
@@ -420,28 +467,36 @@ class ZoomEngine {
     }
 
     // ── Cursor Motion Blur ──
-    static _drawCursorWithBlur(ctx, t, cursorData, factor, cx, cy, sx, sy, sw, sh, cursorSize, cursorStyle, type, cursorSpeed, clickData) {
-        const blurSamples = [
-            { dt: 0.050, alpha: 0.18 },
-            { dt: 0.033, alpha: 0.30 },
-            { dt: 0.016, alpha: 0.55 },
-        ];
+    static _drawCursorWithBlur(ctx, t, cursorData, factor, cx, cy, sx, sy, sw, sh, cursorSize, cursorStyle, type, cursorSpeed, clickData, intensity) {
+        const samples = this.generateBlurSamples(intensity, 'cursor');
 
-        for (const s of blurSamples) {
+        // Measure cursor speed to scale blur (fast movement = more visible blur)
+        const nowPos = this.getSmoothedCursorAt(t, cursorData, cursorSpeed);
+        const prevPos = this.getSmoothedCursorAt(Math.max(0, t - 0.05), cursorData, cursorSpeed);
+        let speedScale = 1.0;
+        if (nowPos && prevPos) {
+            const dx = (nowPos.x - prevPos.x);
+            const dy = (nowPos.y - prevPos.y);
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            // dist is in normalized [0,1] coords; typical fast move ~0.03-0.1 per 50ms
+            speedScale = Math.min(1, dist * 15);
+        }
+
+        // Draw ghost frames from oldest to newest (painter's order)
+        for (const s of samples) {
             const prevCursor = this.getSmoothedCursorAt(Math.max(0, t - s.dt), cursorData, cursorSpeed);
             if (!prevCursor) continue;
             const pos = this._mapToScreen(prevCursor.x, prevCursor.y, factor, cx, cy, sx, sy, sw, sh);
             if (!pos) continue;
             ctx.save();
-            ctx.globalAlpha = s.alpha;
+            ctx.globalAlpha = s.alpha * speedScale;
             this._drawImageCursor(ctx, pos.x, pos.y, cursorSize, cursorStyle, type);
             ctx.restore();
         }
 
-        // Main cursor (full alpha, screen space)
-        const cursor = this.getSmoothedCursorAt(t, cursorData, cursorSpeed);
-        if (cursor) {
-            const pos = this._mapToScreen(cursor.x, cursor.y, factor, cx, cy, sx, sy, sw, sh);
+        // Main cursor — always full alpha
+        if (nowPos) {
+            const pos = this._mapToScreen(nowPos.x, nowPos.y, factor, cx, cy, sx, sy, sw, sh);
             if (pos) {
                 ctx.save();
                 this._drawImageCursor(ctx, pos.x, pos.y, cursorSize, cursorStyle, type);

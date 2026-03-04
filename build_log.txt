@@ -1,0 +1,253 @@
+﻿  ΓÇó electron-builder  version=25.1.8 os=10.0.26200
+  ΓÇó loaded configuration  file=package.json ("build" field)
+  ΓÇó effective config  config=directories:
+  output: dist
+  buildResources: assets
+appId: com.zoomcast.app
+productName: ZoomCast
+copyright: Copyright ┬⌐ 2025 ZoomCast
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  icon: assets/icon.ico
+  requestedExecutionLevel: requireAdministrator
+  sign: null
+  forceCodeSigning: false
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: ZoomCast
+  deleteAppDataOnUninstall: false
+  installerIcon: assets/icon.ico
+  uninstallerIcon: assets/icon.ico
+  installerHeaderIcon: assets/icon.ico
+files:
+  - filter:
+      - main.js
+      - preload.js
+      - index.html
+      - modal.html
+      - css/**/*
+      - js/**/*
+      - assets/**/*
+      - helpers/bin/**/*
+      - node_modules/**/*
+      - '!node_modules/.cache/**/*'
+      - '!node_modules/**/*.md'
+      - '!node_modules/**/*.ts'
+      - '!node_modules/**/__tests__/**/*'
+      - '!node_modules/**/*.map'
+      - '!node_modules/ffmpeg-static/bin/**/*'
+      - '!node_modules/**/ffmpeg'
+      - '!node_modules/**/ffprobe'
+      - '!node_modules/**/*.dylib'
+      - '!node_modules/**/*.so'
+      - '!node_modules/**/*.so.*'
+extraResources:
+  - from: node_modules/ffmpeg-static/ffmpeg.exe
+    to: ffmpeg.exe
+  - from: helpers/bin/cursor_tracker.exe
+    to: helpers/bin/cursor_tracker.exe
+  - from: helpers/bin/dxgi_capture.exe
+    to: helpers/bin/dxgi_capture.exe
+
+  ΓÇó spawning        command=C:\Users\karth\OneDrive\Desktop\zoomcast\scripts\app-builder-wrapper.exe node-dep-tree --dir C:\Users\karth\OneDrive\Desktop\zoomcast
+  ΓÇó unresolved deps  unresolved=@derhuerst/http-basicenv-pathsprogress nodeModuleDir=C:\Users\karth\OneDrive\Desktop\zoomcast\node_modules round=0
+  ΓÇó unresolved deps  unresolved=debug nodeModuleDir=C:\Users\karth\OneDrive\Desktop\zoomcast\node_modules round=0
+  ΓÇó unresolved deps  unresolved=debug nodeModuleDir=C:\Users\karth\OneDrive\Desktop\zoomcast\node_modules round=0
+  ΓÇó unresolved deps  unresolved=isexe nodeModuleDir=C:\Users\karth\OneDrive\Desktop\zoomcast\node_modules round=0
+  ΓÇó exited          command=app-builder-wrapper.exe code=0 pid=29512 out=[{"dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules","deps":[{"name":"@derhuerst/http-basic","version":"8.2.4"},{"name":"buffer-from","version":"1.1.2"},{"name":"caseless","version":"0.12.0"},{"name":"concat-stream","version":"2.0.0"},{"name":"debug","version":"4.4.3"},{"name":"env-paths","version":"2.2.1"},{"name":"ffmpeg-static","version":"5.3.0"},{"name":"fluent-ffmpeg","version":"2.1.3"},{"name":"http-response-object","version":"3.0.2"},{"name":"inherits","version":"2.0.4"},{"name":"isexe","version":"2.0.0"},{"name":"ms","version":"2.1.3"},{"name":"parse-cache-control","version":"1.0.1"},{"name":"progress","version":"2.0.3"},{"name":"readable-stream","version":"3.6.2"},{"name":"safe-buffer","version":"5.2.1"},{"name":"string_decoder","version":"1.3.0"},{"name":"sudo-prompt","version":"9.2.1"},{"name":"typedarray","version":"0.0.6"},{"name":"util-deprecate","version":"1.0.2"}]},{"dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\ffmpeg-static\\node_modules","deps":[{"name":"agent-base","version":"6.0.2"},{"name":"https-proxy-agent","version":"5.0.1"}]},{"dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\fluent-ffmpeg\\node_modules","deps":[{"name":"async","version":"0.2.10"},{"name":"which","version":"1.3.1"}]}]
+  ΓÇó executing @electron/rebuild  electronVersion=33.4.11 arch=x64 buildFromSource=false appDir=./
+  ΓÇó installing native dependencies  arch=x64
+  ΓÇó completed installing native dependencies
+  ΓÇó packaging       platform=win32 arch=x64 electron=33.4.11 appOutDir=dist\win-unpacked
+  ΓÇó spawning        command=C:\Users\karth\OneDrive\Desktop\zoomcast\scripts\app-builder-wrapper.exe unpack-electron --configuration [{"platform":"win32","arch":"x64","version":"33.4.11"}] --output C:\Users\karth\OneDrive\Desktop\zoomcast\dist\win-unpacked --distMacOsAppName Electron.app
+  ΓÇó map async       taskCount=2
+  ΓÇó map async       taskCount=1
+  ΓÇó map async       taskCount=73
+  ΓÇó exited          command=app-builder-wrapper.exe code=0 pid=24888
+  ΓÇó spawning        command=C:\Users\karth\OneDrive\Desktop\zoomcast\scripts\app-builder-wrapper.exe node-dep-tree --dir C:\Users\karth\OneDrive\Desktop\zoomcast --flatten
+  ΓÇó unresolved deps  unresolved=@derhuerst/http-basicenv-pathsprogress nodeModuleDir=C:\Users\karth\OneDrive\Desktop\zoomcast\node_modules round=0
+  ΓÇó unresolved deps  unresolved=debug nodeModuleDir=C:\Users\karth\OneDrive\Desktop\zoomcast\node_modules round=0
+  ΓÇó unresolved deps  unresolved=debug nodeModuleDir=C:\Users\karth\OneDrive\Desktop\zoomcast\node_modules round=0
+  ΓÇó unresolved deps  unresolved=isexe nodeModuleDir=C:\Users\karth\OneDrive\Desktop\zoomcast\node_modules round=0
+  ΓÇó exited          command=app-builder-wrapper.exe code=0 pid=15060 out=[{"name":"@derhuerst/http-basic","version":"8.2.4","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\@derhuerst\\http-basic"},{"name":"buffer-from","version":"1.1.2","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\buffer-from"},{"name":"caseless","version":"0.12.0","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\caseless"},{"name":"concat-stream","version":"2.0.0","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\concat-stream"},{"name":"debug","version":"4.4.3","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\debug"},{"name":"env-paths","version":"2.2.1","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\env-paths"},{"name":"ffmpeg-static","version":"5.3.0","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\ffmpeg-static","conflictDependency":[{"name":"agent-base","version":"6.0.2","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\ffmpeg-static\\node_modules\\agent-base"},{"name":"https-proxy-agent","version":"5.0.1","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\ffmpeg-static\\node_modules\\https-proxy-agent"}]},{"name":"fluent-ffmpeg","version":"2.1.3","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\fluent-ffmpeg","conflictDependency":[{"name":"async","version":"0.2.10","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\fluent-ffmpeg\\node_modules\\async"},{"name":"which","version":"1.3.1","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\fluent-ffmpeg\\node_modules\\which"}]},{"name":"http-response-object","version":"3.0.2","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\http-response-object"},{"name":"inherits","version":"2.0.4","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\inherits"},{"name":"isexe","version":"2.0.0","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\isexe"},{"name":"ms","version":"2.1.3","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\ms"},{"name":"parse-cache-control","version":"1.0.1","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\parse-cache-control"},{"name":"progress","version":"2.0.3","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\progress"},{"name":"readable-stream","version":"3.6.2","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\readable-stream"},{"name":"safe-buffer","version":"5.2.1","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\safe-buffer"},{"name":"string_decoder","version":"1.3.0","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\string_decoder"},{"name":"sudo-prompt","version":"9.2.1","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\sudo-prompt"},{"name":"typedarray","version":"0.0.6","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\typedarray"},{"name":"util-deprecate","version":"1.0.2","dir":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\node_modules\\util-deprecate"}]
+  ΓÇó not packed into asar archive  file=node_modules\ffmpeg-static\LICENSE reason=contains executable code
+  ΓÇó updating asar integrity executable resource  executablePath=dist\win-unpacked\ZoomCast.exe
+  ΓÇó getPublishConfigsForUpdateInfo: no publishConfigs, detect using repository info
+  ΓÇó calling getInfo  reason=owner or project is not specified explicitly provider=github owner=undefined project=undefined
+  ΓÇó spawning        command=C:\Users\karth\OneDrive\Desktop\zoomcast\scripts\app-builder-wrapper.exe icon --format ico --root C:\Users\karth\OneDrive\Desktop\zoomcast\assets --root C:\Users\karth\OneDrive\Desktop\zoomcast --out C:\Users\karth\OneDrive\Desktop\zoomcast\dist\.icon-ico --input assets/icon.ico
+  ΓÇó path doesn't exist  path=C:\Users\karth\OneDrive\Desktop\zoomcast\assets\assets\icon.ico
+  ΓÇó path resolved   path=C:\Users\karth\OneDrive\Desktop\zoomcast\assets\icon.ico outputFormat=ico
+  ΓÇó exited          command=app-builder-wrapper.exe code=0 pid=33168 out={"icons":[{"file":"C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\assets\\icon.ico","size":256}],"isFallback":false}
+  ΓÇó spawning        command=C:\Users\karth\OneDrive\Desktop\zoomcast\scripts\app-builder-wrapper.exe rcedit --args ["C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\dist\\win-unpacked\\ZoomCast.exe","--set-version-string","FileDescription","ZoomCast ΓÇö Professional screen recorder with cinematic zoom effects, motion blur, and export for Windows.","--set-version-string","ProductName","ZoomCast","--set-version-string","LegalCopyright","Copyright ┬⌐ 2025 ZoomCast","--set-file-version","1.0.0","--set-product-version","1.0.0.0","--set-version-string","InternalName","ZoomCast","--set-version-string","OriginalFilename","","--set-requested-execution-level","requireAdministrator","--set-version-string","CompanyName","ZoomCast","--set-icon","C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\assets\\icon.ico"]
+  ΓÇó computing effective URL  initialUrl=https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z
+                             currentUrl=https://release-assets.githubusercontent.com/github-production-release-asset/65527128/f73f2200-5d53-11ea-8264-ddd345f11ee4?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-02-23T14%3A14%3A23Z&rscd=attachment%3B+filename%3DwinCodeSign-2.6.0.7z&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-02-23T13%3A13%3A36Z&ske=2026-02-23T14%3A14%3A23Z&sks=b&skv=2018-11-09&sig=w7ADtQHMnZybmx%2FjKbK%2FBANILCOvjwQ34PFKXloBdAw%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3MTg1Mjg1OSwibmJmIjoxNzcxODUyNTU5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.IFZI-s2n_uokgnfBn__G9d-K3S-S72ptsj-C9vTjOEA&response-content-disposition=attachment%3B%20filename%3DwinCodeSign-2.6.0.7z&response-content-type=application%2Foctet-stream
+  ΓÇó downloading     url=https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z length=5635384 contentType=application/octet-stream
+  ΓÇó downloading     url=https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z size=5.6 MB parts=1
+  ΓÇó map async       taskCount=1
+  ΓÇó download part   range=bytes=0-5635383 index=0
+  ΓÇó downloaded      url=https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z duration=1.586s
+  ΓÇó execute command  command='C:\Users\karth\OneDrive\Desktop\zoomcast\node_modules\7zip-bin\win\x64\7za.exe' x -snld -bd 'C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\082412591.7z' '-oC:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\082412591'
+                     workingDirectory=C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign
+  Γ¿» cannot execute  cause=exit status 2
+                    out=
+    7-Zip (a) 21.07 (x64) : Copyright (c) 1999-2021 Igor Pavlov : 2021-12-26
+    
+    Scanning the drive for archives:
+    1 file, 5635384 bytes (5504 KiB)
+    
+    Extracting archive: C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\082412591.7z
+    --
+    Path = C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\082412591.7z
+    Type = 7z
+    Physical Size = 5635384
+    Headers Size = 1492
+    Method = LZMA2:24m LZMA:20 BCJ2
+    Solid = +
+    Blocks = 2
+    
+    
+    Sub items Errors: 2
+    
+    Archives with Errors: 1
+    
+    Sub items Errors: 2
+    
+                    errorOut=ERROR: Cannot create symbolic link : A required privilege is not held by the client. : C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\082412591\darwin\10.12\lib\libcrypto.dylib
+    ERROR: Cannot create symbolic link : A required privilege is not held by the client. : C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\082412591\darwin\10.12\lib\libssl.dylib
+    
+                    command='C:\Users\karth\OneDrive\Desktop\zoomcast\node_modules\7zip-bin\win\x64\7za.exe' x -snld -bd 'C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\082412591.7z' '-oC:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\082412591'
+                    workingDir=C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign
+  ΓÇó exited          command=app-builder-wrapper.exe code=2 pid=5316
+  ΓÇó Above command failed, retrying 3 more times
+  ΓÇó spawning        command=C:\Users\karth\OneDrive\Desktop\zoomcast\scripts\app-builder-wrapper.exe rcedit --args ["C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\dist\\win-unpacked\\ZoomCast.exe","--set-version-string","FileDescription","ZoomCast ΓÇö Professional screen recorder with cinematic zoom effects, motion blur, and export for Windows.","--set-version-string","ProductName","ZoomCast","--set-version-string","LegalCopyright","Copyright ┬⌐ 2025 ZoomCast","--set-file-version","1.0.0","--set-product-version","1.0.0.0","--set-version-string","InternalName","ZoomCast","--set-version-string","OriginalFilename","","--set-requested-execution-level","requireAdministrator","--set-version-string","CompanyName","ZoomCast","--set-icon","C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\assets\\icon.ico"]
+  ΓÇó computing effective URL  initialUrl=https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z
+                             currentUrl=https://release-assets.githubusercontent.com/github-production-release-asset/65527128/f73f2200-5d53-11ea-8264-ddd345f11ee4?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-02-23T14%3A14%3A23Z&rscd=attachment%3B+filename%3DwinCodeSign-2.6.0.7z&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-02-23T13%3A13%3A36Z&ske=2026-02-23T14%3A14%3A23Z&sks=b&skv=2018-11-09&sig=w7ADtQHMnZybmx%2FjKbK%2FBANILCOvjwQ34PFKXloBdAw%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3MTg1Mjg1OSwibmJmIjoxNzcxODUyNTU5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.IFZI-s2n_uokgnfBn__G9d-K3S-S72ptsj-C9vTjOEA&response-content-disposition=attachment%3B%20filename%3DwinCodeSign-2.6.0.7z&response-content-type=application%2Foctet-stream
+  ΓÇó downloading     url=https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z length=5635384 contentType=application/octet-stream
+  ΓÇó downloading     url=https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z size=5.6 MB parts=1
+  ΓÇó map async       taskCount=1
+  ΓÇó download part   range=bytes=0-5635383 index=0
+  ΓÇó downloaded      url=https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z duration=1.665s
+  ΓÇó execute command  command='C:\Users\karth\OneDrive\Desktop\zoomcast\node_modules\7zip-bin\win\x64\7za.exe' x -snld -bd 'C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\533017855.7z' '-oC:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\533017855'
+                     workingDirectory=C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign
+  Γ¿» cannot execute  cause=exit status 2
+                    out=
+    7-Zip (a) 21.07 (x64) : Copyright (c) 1999-2021 Igor Pavlov : 2021-12-26
+    
+    Scanning the drive for archives:
+    1 file, 5635384 bytes (5504 KiB)
+    
+    Extracting archive: C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\533017855.7z
+    --
+    Path = C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\533017855.7z
+    Type = 7z
+    Physical Size = 5635384
+    Headers Size = 1492
+    Method = LZMA2:24m LZMA:20 BCJ2
+    Solid = +
+    Blocks = 2
+    
+    
+    Sub items Errors: 2
+    
+    Archives with Errors: 1
+    
+    Sub items Errors: 2
+    
+                    errorOut=ERROR: Cannot create symbolic link : A required privilege is not held by the client. : C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\533017855\darwin\10.12\lib\libcrypto.dylib
+    ERROR: Cannot create symbolic link : A required privilege is not held by the client. : C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\533017855\darwin\10.12\lib\libssl.dylib
+    
+                    command='C:\Users\karth\OneDrive\Desktop\zoomcast\node_modules\7zip-bin\win\x64\7za.exe' x -snld -bd 'C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\533017855.7z' '-oC:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\533017855'
+                    workingDir=C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign
+  ΓÇó exited          command=app-builder-wrapper.exe code=2 pid=6012
+  ΓÇó Above command failed, retrying 3 more times
+  ΓÇó spawning        command=C:\Users\karth\OneDrive\Desktop\zoomcast\scripts\app-builder-wrapper.exe rcedit --args ["C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\dist\\win-unpacked\\ZoomCast.exe","--set-version-string","FileDescription","ZoomCast ΓÇö Professional screen recorder with cinematic zoom effects, motion blur, and export for Windows.","--set-version-string","ProductName","ZoomCast","--set-version-string","LegalCopyright","Copyright ┬⌐ 2025 ZoomCast","--set-file-version","1.0.0","--set-product-version","1.0.0.0","--set-version-string","InternalName","ZoomCast","--set-version-string","OriginalFilename","","--set-requested-execution-level","requireAdministrator","--set-version-string","CompanyName","ZoomCast","--set-icon","C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\assets\\icon.ico"]
+  ΓÇó computing effective URL  initialUrl=https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z
+                             currentUrl=https://release-assets.githubusercontent.com/github-production-release-asset/65527128/f73f2200-5d53-11ea-8264-ddd345f11ee4?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-02-23T14%3A14%3A23Z&rscd=attachment%3B+filename%3DwinCodeSign-2.6.0.7z&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-02-23T13%3A13%3A36Z&ske=2026-02-23T14%3A14%3A23Z&sks=b&skv=2018-11-09&sig=w7ADtQHMnZybmx%2FjKbK%2FBANILCOvjwQ34PFKXloBdAw%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3MTg1Mjg1OSwibmJmIjoxNzcxODUyNTU5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.IFZI-s2n_uokgnfBn__G9d-K3S-S72ptsj-C9vTjOEA&response-content-disposition=attachment%3B%20filename%3DwinCodeSign-2.6.0.7z&response-content-type=application%2Foctet-stream
+  ΓÇó downloading     url=https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z length=5635384 contentType=application/octet-stream
+  ΓÇó downloading     url=https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z size=5.6 MB parts=1
+  ΓÇó map async       taskCount=1
+  ΓÇó download part   range=bytes=0-5635383 index=0
+  ΓÇó downloaded      url=https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z duration=1.633s
+  ΓÇó execute command  command='C:\Users\karth\OneDrive\Desktop\zoomcast\node_modules\7zip-bin\win\x64\7za.exe' x -snld -bd 'C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\846870243.7z' '-oC:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\846870243'
+                     workingDirectory=C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign
+  Γ¿» cannot execute  cause=exit status 2
+                    out=
+    7-Zip (a) 21.07 (x64) : Copyright (c) 1999-2021 Igor Pavlov : 2021-12-26
+    
+    Scanning the drive for archives:
+    1 file, 5635384 bytes (5504 KiB)
+    
+    Extracting archive: C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\846870243.7z
+    --
+    Path = C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\846870243.7z
+    Type = 7z
+    Physical Size = 5635384
+    Headers Size = 1492
+    Method = LZMA2:24m LZMA:20 BCJ2
+    Solid = +
+    Blocks = 2
+    
+    
+    Sub items Errors: 2
+    
+    Archives with Errors: 1
+    
+    Sub items Errors: 2
+    
+                    errorOut=ERROR: Cannot create symbolic link : A required privilege is not held by the client. : C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\846870243\darwin\10.12\lib\libcrypto.dylib
+    ERROR: Cannot create symbolic link : A required privilege is not held by the client. : C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\846870243\darwin\10.12\lib\libssl.dylib
+    
+                    command='C:\Users\karth\OneDrive\Desktop\zoomcast\node_modules\7zip-bin\win\x64\7za.exe' x -snld -bd 'C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\846870243.7z' '-oC:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\846870243'
+                    workingDir=C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign
+  ΓÇó exited          command=app-builder-wrapper.exe code=2 pid=16880
+  ΓÇó Above command failed, retrying 3 more times
+  ΓÇó spawning        command=C:\Users\karth\OneDrive\Desktop\zoomcast\scripts\app-builder-wrapper.exe rcedit --args ["C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\dist\\win-unpacked\\ZoomCast.exe","--set-version-string","FileDescription","ZoomCast ΓÇö Professional screen recorder with cinematic zoom effects, motion blur, and export for Windows.","--set-version-string","ProductName","ZoomCast","--set-version-string","LegalCopyright","Copyright ┬⌐ 2025 ZoomCast","--set-file-version","1.0.0","--set-product-version","1.0.0.0","--set-version-string","InternalName","ZoomCast","--set-version-string","OriginalFilename","","--set-requested-execution-level","requireAdministrator","--set-version-string","CompanyName","ZoomCast","--set-icon","C:\\Users\\karth\\OneDrive\\Desktop\\zoomcast\\assets\\icon.ico"]
+  ΓÇó computing effective URL  initialUrl=https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z
+                             currentUrl=https://release-assets.githubusercontent.com/github-production-release-asset/65527128/f73f2200-5d53-11ea-8264-ddd345f11ee4?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-02-23T14%3A14%3A23Z&rscd=attachment%3B+filename%3DwinCodeSign-2.6.0.7z&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-02-23T13%3A13%3A36Z&ske=2026-02-23T14%3A14%3A23Z&sks=b&skv=2018-11-09&sig=w7ADtQHMnZybmx%2FjKbK%2FBANILCOvjwQ34PFKXloBdAw%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc3MTg1Mjg1OSwibmJmIjoxNzcxODUyNTU5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.IFZI-s2n_uokgnfBn__G9d-K3S-S72ptsj-C9vTjOEA&response-content-disposition=attachment%3B%20filename%3DwinCodeSign-2.6.0.7z&response-content-type=application%2Foctet-stream
+  ΓÇó downloading     url=https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z length=5635384 contentType=application/octet-stream
+  ΓÇó downloading     url=https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z size=5.6 MB parts=1
+  ΓÇó map async       taskCount=1
+  ΓÇó download part   range=bytes=0-5635383 index=0
+  ΓÇó downloaded      url=https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z duration=1.636s
+  ΓÇó execute command  command='C:\Users\karth\OneDrive\Desktop\zoomcast\node_modules\7zip-bin\win\x64\7za.exe' x -snld -bd 'C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\151863819.7z' '-oC:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\151863819'
+                     workingDirectory=C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign
+  Γ¿» cannot execute  cause=exit status 2
+                    out=
+    7-Zip (a) 21.07 (x64) : Copyright (c) 1999-2021 Igor Pavlov : 2021-12-26
+    
+    Scanning the drive for archives:
+    1 file, 5635384 bytes (5504 KiB)
+    
+    Extracting archive: C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\151863819.7z
+    --
+    Path = C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\151863819.7z
+    Type = 7z
+    Physical Size = 5635384
+    Headers Size = 1492
+    Method = LZMA2:24m LZMA:20 BCJ2
+    Solid = +
+    Blocks = 2
+    
+    
+    Sub items Errors: 2
+    
+    Archives with Errors: 1
+    
+    Sub items Errors: 2
+    
+                    errorOut=ERROR: Cannot create symbolic link : A required privilege is not held by the client. : C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\151863819\darwin\10.12\lib\libcrypto.dylib
+    ERROR: Cannot create symbolic link : A required privilege is not held by the client. : C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\151863819\darwin\10.12\lib\libssl.dylib
+    
+                    command='C:\Users\karth\OneDrive\Desktop\zoomcast\node_modules\7zip-bin\win\x64\7za.exe' x -snld -bd 'C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\151863819.7z' '-oC:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign\151863819'
+                    workingDir=C:\Users\karth\AppData\Local\electron-builder\Cache\winCodeSign
+  ΓÇó exited          command=app-builder-wrapper.exe code=2 pid=32360
+  ΓÇó Above command failed, retrying 3 more times

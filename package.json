@@ -1,18 +1,27 @@
 {
   "name": "zoomcast",
   "version": "1.0.0",
-  "description": "ZoomCast — Screen.studio for Windows. Professional screen recorder with cinematic zoom effects.",
+  "description": "ZoomCast — Professional screen recorder with cinematic zoom effects, motion blur, and export for Windows.",
   "main": "main.js",
+  "author": {
+    "name": "ZoomCast",
+    "email": "support@zoomcast.app"
+  },
+  "license": "MIT",
   "scripts": {
     "start": "electron .",
+    "make-icon": "node scripts/generate-icon.js",
+    "build:helpers": "node scripts/build-python-helpers.js",
+    "prebuild": "node scripts/generate-icon.js",
     "build": "electron-builder --win",
-    "pack": "electron-builder --dir"
+    "build:dir": "electron-builder --dir",
+    "build:full": "node scripts/generate-icon.js && node scripts/build-python-helpers.js && electron-builder --win",
+    "postinstall": "electron-builder install-app-deps"
   },
-  "author": "ZoomCast",
-  "license": "MIT",
   "devDependencies": {
     "electron": "^33.0.0",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "png-to-ico": "^3.0.1"
   },
   "dependencies": {
     "ffmpeg-static": "^5.2.0",
@@ -22,33 +31,77 @@
   "build": {
     "appId": "com.zoomcast.app",
     "productName": "ZoomCast",
+    "copyright": "Copyright © 2025 ZoomCast",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "assets"
     },
     "win": {
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
-      "icon": "assets/icon.png"
+      "icon": "assets/icon.ico",
+      "requestedExecutionLevel": "requireAdministrator",
+      "sign": null,
+      "forceCodeSigning": false,
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ZoomCast",
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico"
     },
     "files": [
       "main.js",
       "preload.js",
       "index.html",
+      "modal.html",
       "css/**/*",
       "js/**/*",
       "assets/**/*",
-      "helpers/**/*",
-      "node_modules/**/*"
+      "helpers/bin/**/*",
+      "node_modules/**/*",
+      "!node_modules/.cache/**/*",
+      "!node_modules/**/*.md",
+      "!node_modules/**/*.ts",
+      "!node_modules/**/__tests__/**/*",
+      "!node_modules/**/*.map",
+      "!node_modules/ffmpeg-static/bin/**/*",
+      "!node_modules/**/ffmpeg",
+      "!node_modules/**/ffprobe",
+      "!node_modules/**/*.dylib",
+      "!node_modules/**/*.so",
+      "!node_modules/**/*.so.*"
     ],
     "extraResources": [
       {
         "from": "node_modules/ffmpeg-static/ffmpeg.exe",
         "to": "ffmpeg.exe"
+      },
+      {
+        "from": "helpers/bin/cursor_tracker.exe",
+        "to": "helpers/bin/cursor_tracker.exe"
+      },
+      {
+        "from": "helpers/bin/dxgi_capture.exe",
+        "to": "helpers/bin/dxgi_capture.exe"
       }
     ]
   }

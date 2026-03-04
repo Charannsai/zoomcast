@@ -38,7 +38,8 @@ def main():
     ]
     
     # Start ffmpeg encoder
-    process = subprocess.Popen(ffmpeg_args, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+    process = subprocess.Popen(ffmpeg_args, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL, creationflags=creationflags)
     
     running = True
 
